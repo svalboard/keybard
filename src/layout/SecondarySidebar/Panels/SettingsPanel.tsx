@@ -24,6 +24,7 @@ import { customValueService } from "@/services/custom-value.service";
 import { fileService } from "@/services/file.service";
 import { printService } from "@/services/print.service";
 import { useRef, useState } from "react";
+import LayoutResetSection from "./LayoutResetSection";
 import BoardIdentitySection from "./BoardIdentitySection";
 import FragmentsPanel from "./FragmentsPanel";
 
@@ -354,6 +355,8 @@ const SettingsPanel = () => {
                     </div>
                 </div>
 
+                <LayoutResetSection />
+
                 {/* Developer tools */}
                 <div className="flex flex-col gap-1">
                     <span className="text-[9px] font-bold text-slate-500 uppercase">Developer</span>
@@ -474,7 +477,7 @@ const SettingsPanel = () => {
                     <FragmentsPanel />
                 ) : (
                     <div className="flex flex-col overflow-auto px-4 gap-2 h-full scrollbar-thin">
-                        {activeCategory === "general" && <BoardIdentitySection />}
+                        {activeCategory === "general" && <><BoardIdentitySection /><LayoutResetSection /></>}
                         {settingsCategories
                             .find((cat) => cat.name === activeCategory)
                             ?.settings.map((se) => {
