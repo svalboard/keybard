@@ -421,7 +421,11 @@ def main():
     parser.add_argument('--settings', type=Path)
     parser.add_argument('--allow-origin', action='append', default=[], help='extra hosted Keybard origin allowed to use the host API (testing)')
     parser.add_argument('--paranoid', action='store_true', help='serve Keybard Paranoid and accept no website origins')
+    parser.add_argument('--open-file', type=Path, help='open a local Keybard Paranoid file in the contained browser, then exit')
     args = parser.parse_args()
+    if args.open_file:
+        app = QApplication(sys.argv[:1]); app.setApplicationName('Keybard Host')
+        return open_paranoid(QUrl.fromLocalFile(str(args.open_file.resolve())).toString())
     if args.paranoid:
         if args.allow_origin: parser.error('--paranoid accepts no extra origins')
         if args.assets == parser.get_default('assets'): args.assets = args.assets.parent / 'web-paranoid'

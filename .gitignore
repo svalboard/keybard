@@ -6,3 +6,4 @@ dist-paranoid
 .DS_Store
 coverage/
 docs/dev-sessions/
+build-windows

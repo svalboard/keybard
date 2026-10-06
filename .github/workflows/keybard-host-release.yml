@@ -50,3 +50,49 @@ jobs:
           gh release create "$RELEASE_TAG" dist/KeybardHost-Windows.zip dist/keybard-paranoid.html dist/SHA256SUMS.txt
           --verify-tag --draft --prerelease --title "Keybard Host $RELEASE_TAG"
           --notes-file companion/overlay-host/RELEASE-NOTES.md
+
+  windows-installer:
+    # Native installer: frozen app (no runtime download) wrapped in Inno Setup.
+    needs: package
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: npm ci
+      - run: npm run build:svalboard
+      - run: npm run build:paranoid
+      - run: python -m pip install -r companion/overlay-host/requirements.txt "pyinstaller>=6.11,<7"
+      - name: Install Inno Setup if needed
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - name: Build installer
+        env:
+          # Code signing switches on when this secret exists (docs/code-signing.md); unsigned otherwise.
+          KEYBARD_SIGN_COMMAND: ${{ secrets.KEYBARD_SIGN_COMMAND }}
+        run: python companion/overlay-host/packaging/windows/build.py --version "${{ inputs.tag }}"
+      - name: Install, run and uninstall
+        shell: pwsh
+        run: ./companion/overlay-host/packaging/windows/smoke-test.ps1 -Installer build-windows/KeybardHostSetup.exe
+      - name: Attach to the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          cd build-windows
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --clobber
+          echo "$(sha256sum KeybardHostSetup.exe | cut -d' ' -f1)  KeybardHostSetup.exe" >> SHA256SUMS.txt
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" KeybardHostSetup.exe SHA256SUMS.txt --clobber
