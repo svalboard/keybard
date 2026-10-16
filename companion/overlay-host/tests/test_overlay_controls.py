@@ -69,13 +69,21 @@ class OverlayControlsTest(unittest.TestCase):
         self.assertTrue(self.controls.resizer.isEnabled())
 
     def test_collapsed_overlay_still_moves_with_its_handle(self):
-        self.controls.set_collapsed(True)
-        self.surface.move(100, 100)
-        before = self.surface.pos()
+        # Collapsed, the grip drags the visible controls; the hidden overlay follows them, and
+        # expanding shows it under the controls where they were dropped, with no jump.
+        self.surface.show(); self.controls.show()
+        self.surface.resize(400, 200); self.surface.move(200, 300); self.app.processEvents()
+        self.controls.set_collapsed(True); self.app.processEvents()
+        controls_before = self.controls.pos()
         handle = self.controls.handle
         handle.mousePressEvent(QMouseEvent(QMouseEvent.MouseButtonPress, QPointF(4,4), QPointF(200,200), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
         handle.mouseMoveEvent(QMouseEvent(QMouseEvent.MouseMove, QPointF(24,14), QPointF(220,210), Qt.NoButton, Qt.LeftButton, Qt.NoModifier))
-        self.assertEqual(self.surface.pos(), before + QPoint(20,10))
+        self.app.processEvents()
+        self.assertEqual(self.controls.pos(), controls_before + QPoint(20,10))
+        self.controls.set_collapsed(False); self.app.processEvents()
+        self.assertEqual(self.controls.pos(), controls_before + QPoint(20,10))
+        self.assertEqual(self.surface.x() + self.surface.width(), self.controls.x() + self.controls.width())
+        self.assertEqual(self.surface.y(), self.controls.y() + self.controls.height() + 4)
 
     def test_handle_drags_surface_even_in_click_through(self):
         self.surface.pass_clicks_through()

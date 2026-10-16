@@ -153,17 +153,24 @@ class DragHandle(QToolButton):
         self.setAccessibleName('Drag overlay')
         self.setCursor(Qt.SizeAllCursor)
 
+    def target(self):
+        """The window the grip drags: the overlay, or while it's collapsed (hidden) the controls
+        themselves, which carry the hidden overlay along. A hidden window moves without telling
+        anyone, so dragging it left the controls behind until the overlay jumped on expand."""
+        return self.window() if getattr(self.window(), 'collapsed', False) else self.surface
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            if self.surface.windowHandle() and self.surface.windowHandle().startSystemMove():
+            target = self.target()
+            if target.windowHandle() and target.windowHandle().startSystemMove():
                 self.offset = None
             else:
-                self.offset = event.globalPosition().toPoint() - self.surface.pos()
+                self.offset = event.globalPosition().toPoint() - target.pos()
             event.accept()
 
     def mouseMoveEvent(self, event):
         if self.offset is not None and event.buttons() & Qt.LeftButton:
-            self.surface.move(event.globalPosition().toPoint() - self.offset)
+            self.target().move(event.globalPosition().toPoint() - self.offset)
             event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -269,6 +276,13 @@ class OverlayControls(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         float_window(self)
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        # Collapsed, the controls are what moves: keep the hidden overlay under them, where
+        # reposition() would put the controls for it, so expanding shows it right there.
+        if getattr(self, 'collapsed', False):
+            self.surface.move(self.x() + self.width() - self.surface.width(), self.y() + self.height() + 4)
 
     def reposition(self):
         screen = self.surface.screen() or QApplication.primaryScreen()
