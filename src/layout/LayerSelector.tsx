@@ -15,6 +15,8 @@ import TelescopeIcon from "@/components/icons/TelescopeIcon";
 import { ArrowLeft, ChevronDown, Unplug, Undo2, Zap } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useKeyboard } from "@/contexts/KeyboardContext";
+import { useKeyBinding } from "@/contexts/KeyBindingContext";
+import { focusedLayer, isTabMarkedLive } from "@/utils/layer-indicator";
 import { useChanges } from "@/contexts/ChangesContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { cn } from "@/lib/utils";
@@ -83,8 +85,12 @@ const LayerSelector: FC<LayerSelectorProps> = ({
     const { is3DMode, setIs3DMode, isThumb3DOffsetActive, setIsThumb3DOffsetActive } = useLayoutSettings();
     const { activePanel, setActivePanel, setOpen, setItemToEdit, setPanelToGoBack } = usePanels();
 
+    const { selectedTarget, clearSelection } = useKeyBinding();
+
     const liveUpdating = isInstant;
-    const selectedLayer = _selectedLayer;
+    // The tab marked here is the layer that has focus. With several layers shown, a key
+    // selected in one of them gives it focus; the board's live layer never moves it.
+    const selectedLayer = focusedLayer({ displayedLayer: _selectedLayer, selectedTarget, isMultiLayersActive });
     const transparentKeyGlyph = KEYMAP["KC_TRNS"]?.str || "▽";
 
 
@@ -137,9 +143,8 @@ const LayerSelector: FC<LayerSelectorProps> = ({
         const visibleLayerIds = allLayerIds.filter((i) => {
             const layerData = keyboard.keymap?.[i];
             const isTransparentLayer = layerData ? layerData.every((keycode) => keycode === (KEYMAP["KC_TRNS"]?.code ?? 1)) : true;
-            const isLayerActive = typeof activeLayerIndex === "number"
-                ? activeLayerIndex === i
-                : !!layerActiveState?.[i];
+            // The overview shows several layers, so the board's live layer doesn't keep a tab.
+            const isLayerActive = isTabMarkedLive({ layer: i, isMultiLayersActive: true, activeLayerIndex, layerActiveState });
 
             if (!nextShowAllLayers && isTransparentLayer && i !== nextSelectedLayer && !isLayerActive) {
                 return false;
@@ -168,7 +173,7 @@ const LayerSelector: FC<LayerSelectorProps> = ({
             if (isAllTransparencyActive !== snapshot.isAllTransparencyActive) onToggleAllTransparency();
             if (showAllLayers !== snapshot.showAllLayers) onToggleShowLayers();
             if (isLayerOrderReversed !== snapshot.isLayerOrderReversed) onToggleLayerOrder();
-            if (selectedLayer !== snapshot.selectedLayer) setSelectedLayer(snapshot.selectedLayer);
+            if (_selectedLayer !== snapshot.selectedLayer) setSelectedLayer(snapshot.selectedLayer);
             return;
         }
 
@@ -179,7 +184,7 @@ const LayerSelector: FC<LayerSelectorProps> = ({
             isAllTransparencyActive,
             showAllLayers,
             isLayerOrderReversed,
-            selectedLayer,
+            selectedLayer: _selectedLayer,
         };
         setIsOverviewActive(true);
 
@@ -228,14 +233,14 @@ const LayerSelector: FC<LayerSelectorProps> = ({
 
     const handleSelectLayer = (layer: number) => () => {
         setSelectedLayer(layer);
+        // A tab click moves focus to its layer, away from a key selected in another one.
+        if (isMultiLayersActive && selectedTarget?.type === "keyboard" && selectedTarget.layer !== layer) clearSelection?.();
     };
 
     const shouldRenderLayerTab = (i: number) => {
         const layerData = keyboard.keymap?.[i];
         const isTransparentLayer = layerData ? layerData.every((keycode) => keycode === (KEYMAP["KC_TRNS"]?.code ?? 1)) : true;
-        const isLayerActive = typeof activeLayerIndex === "number"
-            ? activeLayerIndex === i
-            : !!layerActiveState?.[i];
+        const isLayerActive = isTabMarkedLive({ layer: i, isMultiLayersActive, activeLayerIndex, layerActiveState });
 
         const shouldHideTransparent = !showAllLayers;
         if (shouldHideTransparent && isTransparentLayer && i !== selectedLayer && !isLayerActive) {
@@ -249,9 +254,7 @@ const LayerSelector: FC<LayerSelectorProps> = ({
 
         const layerShortName = svalService.getLayerNameNoLabel(keyboard, i);
         const isActive = selectedLayer === i;
-        const isLayerActive = typeof activeLayerIndex === "number"
-            ? activeLayerIndex === i
-            : !!layerActiveState?.[i];
+        const isLayerActive = isTabMarkedLive({ layer: i, isMultiLayersActive, activeLayerIndex, layerActiveState });
 
         return (
             <button

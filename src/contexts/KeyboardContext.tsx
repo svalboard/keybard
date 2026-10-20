@@ -13,6 +13,7 @@ import { seedComboNames } from "../utils/combo-names";
 import { recallComboNames, rememberComboNames } from "../utils/combo-name-memory";
 import type { KeyBlockWriter } from "../services/changes.service";
 import { PARANOID, userIsLooking } from "../lib/paranoid";
+import { boardLayerFromSearch } from "../lib/deepLinks";
 import { LinuxHidAccessError } from "../utils/linux-hid-access";
 import { UnsupportedFirmwareError, type UnsupportedFirmwareInfo } from "../utils/unsupported-firmware";
 import { RAW_HID_USAGES } from "../services/hid-report";
@@ -486,7 +487,8 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                     console.warn("Layer state polling error:", error);
                 }
             } else if (isActive) {
-                setActiveLayerIndex(null);
+                // No board: only a review link's simulated board layer (?demo&boardLayer=N).
+                setActiveLayerIndex(boardLayerFromSearch(window.location.search));
                 setDefaultLayerIndex(null);
             }
 

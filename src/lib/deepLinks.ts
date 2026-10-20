@@ -9,12 +9,16 @@
  *   combos named (DEMO_COMBO_NAMES).
  * - ?theme=light|dark forces the theme for this load only.
  * - ?edit=combo:N | tapdance:N | macro:N opens that editor once a layout is loaded.
+ * - ?demo&boardLayer=N stands in for a board reporting layer N as its live
+ *   layer, while no board is connected. Unlike the others it is read on each
+ *   layer poll, so a test can change it without reloading the page.
  */
 import type { ResolvedTheme } from "@/lib/theme";
 
 export const DEMO_PARAM = "demo";
 export const THEME_PARAM = "theme";
 export const EDIT_PARAM = "edit";
+export const BOARD_LAYER_PARAM = "boardLayer";
 
 export type DemoChoice = "qwerty" | "combos";
 
@@ -37,6 +41,15 @@ export function demoFromSearch(search: string): DemoChoice | null {
 export function themeFromSearch(search: string): ResolvedTheme | null {
     const value = param(search, THEME_PARAM)?.trim().toLowerCase();
     return value === "light" || value === "dark" ? value : null;
+}
+
+/** ?demo&boardLayer=N (N from 0 to 31): the simulated board's live layer; otherwise null. */
+export function boardLayerFromSearch(search: string): number | null {
+    if (demoFromSearch(search) === null) return null;
+    const value = param(search, BOARD_LAYER_PARAM)?.trim() ?? "";
+    if (!/^\d{1,2}$/.test(value)) return null;
+    const layer = Number(value);
+    return layer <= 31 ? layer : null;
 }
 
 export type EditKind = "combo" | "tapdance" | "macro";

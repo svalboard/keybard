@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-    claimDemoStart, claimEditStart, demoFromSearch, editFromSearch, editTargetExists,
+    boardLayerFromSearch, claimDemoStart, claimEditStart, demoFromSearch, editFromSearch, editTargetExists,
     resetDeepLinksForTests, themeFromSearch, withDemoFeatures,
 } from "@/lib/deepLinks";
 import { fileService } from "@/services/file.service";
@@ -71,5 +71,21 @@ describe("?edit", () => {
     it("opens once per page load", () => {
         expect(claimEditStart()).toBe(true);
         expect(claimEditStart()).toBe(false);
+    });
+});
+
+describe("?demo&boardLayer=N", () => {
+    it("is the simulated board's live layer, only with ?demo", () => {
+        expect(boardLayerFromSearch("?demo&boardLayer=2")).toBe(2);
+        expect(boardLayerFromSearch("?demo=combos&boardLayer=0")).toBe(0);
+        expect(boardLayerFromSearch("?demo&boardLayer=31")).toBe(31);
+        expect(boardLayerFromSearch("?boardLayer=2")).toBeNull();
+        expect(boardLayerFromSearch("?demo")).toBeNull();
+    });
+
+    it("ignores anything that isn't a layer from 0 to 31", () => {
+        for (const bad of ["32", "-1", "1.5", "abc", "", "999"]) {
+            expect(boardLayerFromSearch(`?demo&boardLayer=${bad}`)).toBeNull();
+        }
     });
 });
