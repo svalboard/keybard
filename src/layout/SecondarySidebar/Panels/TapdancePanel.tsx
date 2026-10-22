@@ -10,6 +10,7 @@ import { usePanels } from "@/contexts/PanelsContext";
 import { useKeyboard } from "@/contexts/KeyboardContext";
 import { hoverBackgroundClasses, hoverBorderClasses, hoverHeaderClasses } from "@/utils/colors";
 import { getKeyContents } from "@/utils/keys";
+import { getKeyDisplayLabel } from "@/utils/key-display";
 import { KeyContent } from "@/types/keyboard.types";
 import DescriptionBlock from "@/layout/SecondarySidebar/components/DescriptionBlock";
 
@@ -22,7 +23,7 @@ const TapdancePanel: React.FC<Props> = ({ isPicker = false }) => {
     const { keyboard } = useKeyboard();
     const { assignKeycode } = useKeyBinding();
     const { selectedLayer } = useLayer();
-    const { layoutMode } = useLayoutSettings();
+    const { layoutMode, internationalLayout } = useLayoutSettings();
     const {
         setItemToEdit,
         setBindingTypeToEdit,
@@ -51,22 +52,12 @@ const TapdancePanel: React.FC<Props> = ({ isPicker = false }) => {
     };
 
     // Shared small key renderer
-    const renderSmallKey = (content: KeyContent, idx: number, tdIndex: number, slotName: string) => {
+    const renderSmallKey = (keycode: string, content: KeyContent, idx: number, tdIndex: number, slotName: string) => {
         const hasContent =
             (content?.top && content?.top !== "KC_NO") ||
             (content?.str && content?.str !== "" && content?.str !== "KC_NO");
 
-        const label = (() => {
-            const str = content?.str;
-            if (!str) return "";
-            const parts = str.split('\n');
-            if (parts.length === 1) return parts[0];
-            const keycode = content?.top || "";
-            if (content?.type === 'modmask' && (keycode.includes("S(") || keycode.includes("LSFT") || keycode.includes("RSFT"))) {
-                return parts[0];
-            }
-            return parts[parts.length - 1];
-        })();
+        const label = getKeyDisplayLabel(keycode, content, internationalLayout);
 
         return (
             <div className="w-[30px] h-[30px] relative" key={idx}>
@@ -78,7 +69,7 @@ const TapdancePanel: React.FC<Props> = ({ isPicker = false }) => {
                     h={1}
                     row={-1}
                     col={-1}
-                    keycode={content?.top || "KC_NO"}
+                    keycode={keycode || "KC_NO"}
                     label={label}
                     keyContents={content}
                     variant="small"
@@ -159,7 +150,7 @@ const TapdancePanel: React.FC<Props> = ({ isPicker = false }) => {
                                     return (
                                         <div key={idx} className="flex flex-col items-center">
                                             <span className="text-[8px] text-gray-400 dark:text-neutral-400 mb-0.5">{states[idx].label}</span>
-                                            {renderSmallKey(content, idx, i, slotName)}
+                                            {renderSmallKey(states[idx].key, content, idx, i, slotName)}
                                         </div>
                                     );
                                 })}
@@ -237,7 +228,7 @@ const TapdancePanel: React.FC<Props> = ({ isPicker = false }) => {
                         <div className="grid grid-cols-4 justify-items-center w-full max-w-[272px] ml-6">
                             {stateContents.map((content, idx) => {
                                 const slotName = idx === 0 ? "tap" : idx === 1 ? "hold" : idx === 2 ? "taphold" : "doubletap";
-                                return renderSmallKey(content, idx, i, slotName);
+                                return renderSmallKey(states[idx].key, content, idx, i, slotName);
                             })}
                         </div>
                     ) : undefined;

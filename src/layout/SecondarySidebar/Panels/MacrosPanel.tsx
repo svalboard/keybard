@@ -11,6 +11,7 @@ import { usePanels } from "@/contexts/PanelsContext";
 import { useKeyboard } from "@/contexts/KeyboardContext";
 import { hoverBackgroundClasses, hoverBorderClasses, hoverHeaderClasses } from "@/utils/colors";
 import { getKeyContents } from "@/utils/keys";
+import { getKeyDisplayLabel } from "@/utils/key-display";
 import { KeyContent } from "@/types/keyboard.types";
 import DescriptionBlock from "@/layout/SecondarySidebar/components/DescriptionBlock";
 
@@ -26,7 +27,7 @@ const MacrosPanel: React.FC<Props> = ({ isPicker }) => {
     const { keyboard } = useKeyboard();
     const { assignKeycode } = useKeyBinding();
     const { selectedLayer } = useLayer();
-    const { layoutMode } = useLayoutSettings();
+    const { layoutMode, internationalLayout } = useLayoutSettings();
     const {
         setItemToEdit,
         setBindingTypeToEdit,
@@ -92,16 +93,7 @@ const MacrosPanel: React.FC<Props> = ({ isPicker }) => {
                         row={-1}
                         col={-1}
                         keycode={actionKeycode}
-                        label={(() => {
-                            const str = actionKeyContents?.str;
-                            if (!str) return "";
-                            const parts = str.split('\n');
-                            if (parts.length === 1) return parts[0];
-                            if (actionKeyContents?.type === 'modmask' && (actionKeycode.includes("S(") || actionKeycode.includes("LSFT") || actionKeycode.includes("RSFT"))) {
-                                return parts[0];
-                            }
-                            return parts[parts.length - 1];
-                        })()}
+                        label={getKeyDisplayLabel(actionKeycode, actionKeyContents, internationalLayout)}
                         keyContents={actionKeyContents}
                         variant="small"
                         layerColor="sidebar"

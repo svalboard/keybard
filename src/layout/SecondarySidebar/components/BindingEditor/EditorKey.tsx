@@ -3,7 +3,9 @@ import { Trash2 } from "lucide-react";
 import { Key } from "@/components/Key";
 import { useKeyboard } from "@/contexts/KeyboardContext";
 import { useLayer } from "@/contexts/LayerContext";
+import { useLayoutSettings } from "@/contexts/LayoutSettingsContext";
 import { getKeyContents } from "@/utils/keys";
+import { getKeyDisplayLabel } from "@/utils/key-display";
 import { keyService } from "@/services/key.service";
 import { hoverBackgroundClasses, hoverBorderClasses } from "@/utils/colors";
 import { DragItem, useDrag } from "@/contexts/DragContext";
@@ -121,22 +123,9 @@ const EditorKey: FC<EditorKeyProps> = ({
         }
     };
 
-    // Calculate the correct label for display, respecting international layout overrides
-    const displayLabel = label || (() => {
-        if (!keyContents?.str) return "";
-        const parts = keyContents.str.split('\n');
-        if (parts.length === 1) return parts[0];
+    const { internationalLayout } = useLayoutSettings();
+    const slotLabel = getKeyDisplayLabel(keycode, keyContents, internationalLayout);
 
-        // For Modmask with Shift, prefer Top char
-        if (keyContents.type === 'modmask') {
-            if (keycode.includes("S(") || keycode.includes("LSFT") || keycode.includes("RSFT")) {
-                return parts[0];
-            }
-        }
-
-        // Default: prefer bottom/base
-        return parts[parts.length - 1];
-    })() || "";
     return (
         <div className={wrapperClassName}>
             {label && <span className={labelClassName}>{label}</span>}
@@ -152,8 +141,7 @@ const EditorKey: FC<EditorKeyProps> = ({
                     isRelative
                     x={0} y={0} w={1} h={1} row={-1} col={-1}
                     keycode={keycode || "KC_NO"}
-                    label={displayLabel}
-                    forceLabel={!!displayLabel}
+                    label={slotLabel}
                     keyContents={keyContents}
                     selected={selected}
                     onClick={() => {
