@@ -11,6 +11,7 @@ import { useLayoutSettings } from "@/contexts/LayoutSettingsContext";
 import { usePanels } from "@/contexts/PanelsContext";
 import { hoverBackgroundClasses, hoverBorderClasses, hoverHeaderClasses } from "@/utils/colors";
 import { getKeyContents } from "@/utils/keys";
+import { getKeyDisplayLabel } from "@/utils/key-display";
 import { Key } from "@/components/Key";
 import { KeyContent, AltRepeatKeyOptions } from "@/types/keyboard.types";
 import { cn } from "@/lib/utils";
@@ -21,7 +22,7 @@ const AltRepeatPanel: React.FC = () => {
     const persistBinding = useBindingChanges();
     const { assignKeycode, isBinding } = useKeyBinding();
     const { selectedLayer } = useLayer();
-    const { layoutMode } = useLayoutSettings();
+    const { layoutMode, internationalLayout } = useLayoutSettings();
     const {
         setItemToEdit,
         setBindingTypeToEdit,
@@ -96,16 +97,7 @@ const AltRepeatPanel: React.FC = () => {
         const hasContent = keycode !== "KC_NO" && keycode !== "";
         const isSelected = isEditing && itemToEdit === index;
 
-        const label = (() => {
-            const str = content?.str;
-            if (!str) return "";
-            const parts = str.split('\n');
-            if (parts.length === 1) return parts[0];
-            if (content?.type === 'modmask' && (keycode.includes("S(") || keycode.includes("LSFT") || keycode.includes("RSFT"))) {
-                return parts[0];
-            }
-            return parts[parts.length - 1];
-        })();
+        const label = getKeyDisplayLabel(keycode, content, internationalLayout);
 
         return (
             <div className="relative w-[40px] h-[40px] flex items-center justify-center">

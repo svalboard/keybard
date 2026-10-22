@@ -1,5 +1,24 @@
 import type { KeyContent } from "@/types/keyboard.types";
+import { KEYALIASES } from "@/constants/keygen";
 import { getLabelForKeycode, US_SHIFT_ALIASES } from "@/components/Keyboards/layouts";
+
+/**
+ * Resolves the primary label for a keycode respecting the current layout.
+ */
+export function getKeyDisplayLabel(
+    keycode: string | undefined,
+    keyContents: KeyContent | undefined,
+    layoutId: string = "us"
+): string {
+    if (!keycode || keycode === "KC_NO" || keycode === "KC_TRNS") return "";
+    const layoutLabel = getLabelForKeycode(keycode, layoutId);
+    if (layoutLabel) return layoutLabel;
+    if (keyContents?.str) {
+        const parts = keyContents.str.split("\n");
+        return parts[parts.length - 1] || parts[0] || "";
+    }
+    return keycode;
+}
 
 export function getKeyDisplayText(
     keycode: string,
@@ -8,7 +27,7 @@ export function getKeyDisplayText(
     forceLabel: boolean,
     layoutId: string
 ) {
-    let displayLabel = label;
+    let displayLabel = label || getKeyDisplayLabel(keycode, keyContents, layoutId);
     let bottomStr = "";
     let topLabel = "";
 
@@ -44,6 +63,9 @@ export function getKeyDisplayText(
         } else {
             const baseKeycodeMatch = keycode.match(/\((.*)\)$/);
             let baseKeycode = baseKeycodeMatch ? baseKeycodeMatch[1] : null;
+            if (baseKeycode && baseKeycode in KEYALIASES) {
+                baseKeycode = String(KEYALIASES[baseKeycode]);
+            }
             if (baseKeycode && baseKeycode in US_SHIFT_ALIASES) {
                 baseKeycode = US_SHIFT_ALIASES[baseKeycode];
             }
@@ -93,6 +115,9 @@ export function getKeyDisplayText(
 
         const baseKeycodeMatch = keycode.match(/\((.*)\)$/);
         let baseKeycode = baseKeycodeMatch ? baseKeycodeMatch[1] : null;
+        if (baseKeycode && baseKeycode in KEYALIASES) {
+            baseKeycode = String(KEYALIASES[baseKeycode]);
+        }
         if (baseKeycode && baseKeycode in US_SHIFT_ALIASES) {
             baseKeycode = US_SHIFT_ALIASES[baseKeycode];
         }

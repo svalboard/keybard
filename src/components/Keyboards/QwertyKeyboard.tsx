@@ -111,10 +111,9 @@ const QwertyKeyboard: FunctionComponent<IProps> = ({ onKeyPress: onKeyPressCallb
                     // Visual key is determined by shift state
                     const visualKey = isShiftActive ? shiftKey : defaultKey;
 
-                    // Output key is ALWAYS the default key (base), so parent can apply modifiers
-                    // Exception: If the key is specific to the shift layer (rare but possible), defaultKey might be weird?
-                    // But in our layouts, default is strict base.
-                    const outputKey = defaultKey;
+                    // Output key: when activeModifiers are present, parent applies them to the base key.
+                    // When Shift is active only via keyboard layout toggle, send the visual shifted key.
+                    const outputKey = (activeModifiers.length === 0 && isShiftActive) ? visualKey : defaultKey;
 
                     // To get correct QMK keycode for display/icon lookup, we resolve the visual key
                     // key is "ç" or "a" or "{shift}"

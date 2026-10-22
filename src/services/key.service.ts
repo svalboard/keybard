@@ -232,6 +232,13 @@ export class KeyService {
     if (keystr in KEYALIASES) {
       return KEYALIASES[keystr];
     }
+    const match = keystr.match(/^(\w+)\((\w+)\)$/);
+    if (match) {
+      const wrapper = match[1];
+      const inner = match[2];
+      const canonInner = inner in KEYALIASES ? KEYALIASES[inner] : inner;
+      return `${wrapper}(${canonInner})`;
+    }
     return keystr;
   }
 
