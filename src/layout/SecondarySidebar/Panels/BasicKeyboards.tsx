@@ -75,8 +75,13 @@ const BasicKeyboards = ({ isPicker, trayPortal = false }: Props) => {
         const decomposed = decomposeKeycode(numericKeycode);
         if (decomposed) return decomposed.baseKeycode;
 
+        // Layer-tap (QK_LAYER_TAP: 0x4000-0x4FFF): extract inner 8-bit keycode
+        const baseCode = (numericKeycode >= 0x4000 && numericKeycode <= 0x4FFF)
+            ? (numericKeycode & 0x00FF)
+            : numericKeycode;
+
         // Not a modifier key — use the keycode string directly
-        const str = numericKeycode in CODEMAP ? (CODEMAP[numericKeycode] as string) : null;
+        const str = baseCode in CODEMAP ? (CODEMAP[baseCode] as string) : null;
         return str || "KC_NO";
     };
 
