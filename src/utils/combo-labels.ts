@@ -7,6 +7,7 @@ const NAMES: Record<string, string> = {
     QUOTE: "'", QUOT: "'", SCOLON: ";", SCLN: ";", BSLASH: "\\", BSLS: "\\", GRAVE: "`", GRV: "`",
     COMMA: ",", COMM: ",", DOT: ".", SLASH: "/", SLSH: "/", LSHIFT: "L Shift", LSFT: "L Shift",
     LCTRL: "L Ctrl", LCTL: "L Ctrl", LALT: "L Alt", SPACE: "Space", SPC: "Space",
+    CW_TOGG: "Caps Word", QK_CAPS_WORD_TOGGLE: "Caps Word",
 };
 const MOD: Record<string, string> = {
     LCTL: "Ctrl", LSFT: "Shift", LALT: "Alt", LGUI: "GUI", RCTL: "RCtrl", RSFT: "RShift", RALT: "AltGr", RGUI: "RGUI",
