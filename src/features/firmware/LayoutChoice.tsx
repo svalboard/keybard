@@ -1,43 +1,41 @@
-// The layout choice before a reflash: Keep my layout (the default: back up, install, put it
-// back), Reset to the default layout (the firmware's), or Wipe to a blank board (every key
-// empty on every layer, nothing else set; no backup needed).
+// What happens to the layout after a reflash: put it back (the default: back up, install,
+// put it back), start from the firmware's default layout, or start from a blank keyboard
+// (every key empty on every layer, nothing else set; no backup needed).
 
 import { useId } from "react";
 
 import type { Afterwards } from "@/services/updater/flow";
 
 export const LAYOUT_CHOICES: Array<{ value: Afterwards; label: string }> = [
-    { value: "restore", label: "Keep my layout" },
-    { value: "defaults", label: "Reset to the default layout" },
-    { value: "blank", label: "Wipe to a blank board" },
+    { value: "restore", label: "Restore my layout" },
+    { value: "defaults", label: "Start from the default layout" },
+    { value: "blank", label: "Start from a blank keyboard" },
 ];
 
 export interface LayoutChoiceProps {
     value: Afterwards;
     onChange: (value: Afterwards) => void;
-    /** Keep my layout needs a backup: off until it's saved, and after it failed. */
+    /** Restore my layout needs a backup: off until it's saved, and after it failed. */
     keepDisabled: boolean;
-    /** The backup failed: say why Keep my layout is off. */
-    noBackup?: boolean;
-    /** The choices offered (the manual install can't wipe: it has no updater to ask). */
+    /** The choices offered (an install by hand can't clear the keyboard: it has no updater to ask). */
     choices?: Afterwards[];
+    /** The group's accessible name. */
+    label?: string;
 }
 
-export function LayoutChoice({ value, onChange, keepDisabled, noBackup, choices = ["restore", "defaults", "blank"] }: LayoutChoiceProps) {
+export function LayoutChoice({ value, onChange, keepDisabled, choices = ["restore", "defaults", "blank"], label = "After the update" }: LayoutChoiceProps) {
     const group = useId();
     return (
-        <fieldset className="flex flex-col gap-1" aria-label="Layout" data-testid="layout-choice">
-            <legend className="mb-1 text-sm font-semibold">Layout</legend>
+        <div role="radiogroup" aria-label={label} className="flex flex-col gap-1" data-testid="layout-choice">
             {LAYOUT_CHOICES.filter((c) => choices.includes(c.value)).map((c) => {
                 const disabled = c.value === "restore" && keepDisabled;
                 return (
-                    <label key={c.value} className={`flex items-center gap-2 text-sm ${disabled ? "text-muted-foreground" : ""}`}>
-                        <input type="radio" name={group} value={c.value} checked={value === c.value} disabled={disabled} onChange={() => onChange(c.value)} />
+                    <label key={c.value} className={`flex items-center gap-2.5 text-sm ${disabled ? "text-muted-foreground" : "cursor-pointer"}`}>
+                        <input type="radio" className="h-4 w-4 accent-kb-primary" name={group} value={c.value} checked={value === c.value} disabled={disabled} onChange={() => onChange(c.value)} />
                         {c.label}
-                        {c.value === "restore" && noBackup && <span className="text-muted-foreground">· No backup</span>}
                     </label>
                 );
             })}
-        </fieldset>
+        </div>
     );
 }

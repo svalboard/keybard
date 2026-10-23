@@ -54,7 +54,7 @@ describe("updater packets", () => {
     });
 
     it("decodes INFO page 1's tag", () => {
-        expect(decodeInfo1({ status: 0, rsp: encodeInfo1(0, 2400, "x4") })).toEqual({ status: 0, page: 1, fwVersion: 2400, tag: "x4" });
+        expect(decodeInfo1({ status: 0, rsp: encodeInfo1(0, 2400, "x3.2") })).toEqual({ status: 0, page: 1, fwVersion: 2400, tag: "x3.2" });
     });
 
     it("decodes STATUS, with flags2 at rsp[23]", () => {
@@ -77,15 +77,15 @@ describe("updater packets", () => {
 
 describe(".svup files", () => {
     it("parses a manifest, finds the build info and its no-chord flag", async () => {
-        const bytes = await buildSvup({ hand: 0, fwVersion: 2400, tag: "x4", buildFlags: 0x40 });
+        const bytes = await buildSvup({ hand: 0, fwVersion: 2400, tag: "x3.2", buildFlags: 0x40 });
         const f = await loadSvup(bytes);
-        expect(f.manifest).toMatchObject({ hand: 0, fwVersion: 2400, tag: "x4", imageLen: 0x1000, release: true, diagnostic: false, updaterProto: 4 });
-        expect(f.buildInfo).toMatchObject({ infoVersion: 3, fwVersion: 2400, tag: "x4", hand: 0, noChord: true });
+        expect(f.manifest).toMatchObject({ hand: 0, fwVersion: 2400, tag: "x3.2", imageLen: 0x1000, release: true, diagnostic: false, updaterProto: 4 });
+        expect(f.buildInfo).toMatchObject({ infoVersion: 3, fwVersion: 2400, tag: "x3.2", hand: 0, noChord: true });
         expect(f.noChord).toBe(true);
         expect(f.imageHashOk).toBe(true);
         expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);
         expect(f.manifestSha512.length).toBe(64);
-        const chord = await loadSvup(await buildSvup({ hand: 1, fwVersion: 2400, tag: "x4" }));
+        const chord = await loadSvup(await buildSvup({ hand: 1, fwVersion: 2400, tag: "x3.2" }));
         expect(chord.noChord).toBe(false);
     });
 

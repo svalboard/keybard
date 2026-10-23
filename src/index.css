@@ -69,6 +69,9 @@
     --color-kb-scrim: var(--kb-scrim);
     --color-kb-back-highlight: var(--kb-back-highlight);
     --color-kb-back-highlight-fg: var(--kb-back-highlight-fg);
+    --color-kb-warn-ink: var(--kb-warn-ink);
+    --color-kb-warn-bg: var(--kb-warn-bg);
+    --color-kb-confirm: var(--kb-confirm);
 }
 
 :root {
@@ -127,6 +130,10 @@
     /* Back arrow highlight when a click lands under the spotlight (new; the brand green, beside the brand tokens). */
     --kb-back-highlight: #099e7c;
     --kb-back-highlight-fg: #ffffff;
+    /* Firmware: a check that warns or fails, as text and its box; the keys to press while the light blinks blue. */
+    --kb-warn-ink: #a35f00;
+    --kb-warn-bg: #fff4e0;
+    --kb-confirm: #2563eb;
     /* Translucent tones of the highlight, as plain values: color-mix() inside
        @keyframes falls back to the solid color after the CSS build. */
     --kb-back-highlight-soft: rgb(9 158 124 / 0.22);
@@ -224,6 +231,9 @@
     --kb-spot-rail-fg-tint: #a3a6ab;
     --kb-back-highlight: #0bb48d;
     --kb-back-highlight-fg: #ffffff;
+    --kb-warn-ink: #f5a524;
+    --kb-warn-bg: #2f2410;
+    --kb-confirm: #6ea8ff;
     --kb-back-highlight-soft: rgb(11 180 141 / 0.22);
     --kb-back-highlight-ring: rgb(11 180 141 / 0.85);
     --kb-pin-shadow: 0 10px 14px -10px rgb(0 0 0 / 0.7);

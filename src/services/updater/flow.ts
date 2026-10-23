@@ -17,9 +17,17 @@ import { UpdaterClient, UpdaterStatusError } from "./client";
 import type { Plan, Target } from "./checks";
 import {
     ARM_MODE_PAIR, ARM_MODE_SINGLE, CHUNK_PIECE_MAX, HAND_SELF, Presence, RelayPhase, SETTINGS_RESET_BLANK, SETTINGS_RESET_BOTH, State, Status,
-    handName, hex, otherHand, type Hand,
+    handName, hex, otherHand, statusName, type Hand,
 } from "./protocol";
+import { manualOwnsResetNotice } from "./manual";
 import { loadSvup, type SvupFile } from "./svup";
+import { isUf2, loadFirmwareFile } from "./uf2";
+import { SideSource, SideStatus, type Side, type SideValue } from "../side";
+import {
+    assessSides, currentSides, sidesSettling, explainSideStatus, planAfterUpdate, type HalfRole, type KnownSides,
+    type SideAssessment, type SideWrite,
+} from "../side-decision";
+import type { SideHost } from "../side-host";
 import { DisconnectedError, ReplyTimeoutError, type Clock, type UpdaterTransport } from "./transport";
 
 /** The layout choice before an install: Keep my layout, Reset to the default layout, Wipe to a blank board. */
@@ -27,14 +35,14 @@ export type Afterwards = "restore" | "defaults" | "blank";
 
 export type Stage =
     | "waiting" | "approve" | "preparing" | "sending" | "checking" | "copying" | "installing" | "restarting"
-    | "reconnecting" | "checking-halves" | "restoring" | "done" | "stopped";
+    | "reconnecting" | "checking-halves" | "checking-sides" | "restoring" | "done" | "stopped";
 
 export type Step =
     | "start" | "approve" | "other-erase" | "other-send" | "other-verify" | "relay" | "other-install" | "other-restart"
-    | "self-arm" | "self-erase" | "self-send" | "self-verify" | "self-install" | "reconnect" | "check-halves"
+    | "self-arm" | "self-erase" | "self-send" | "self-verify" | "self-install" | "reconnect" | "sides" | "check-halves"
     | "settings-reset" | "restore" | "done" | "failed";
 
-export type FailureId = "F2" | "F3" | "F4" | "F5" | "F6" | "F9" | "F10" | "F11" | "F12" | "F14" | "F16" | "F17" | "F18" | "F19" | "F20";
+export type FailureId = "F2" | "F3" | "F4" | "F5" | "F6" | "F9" | "F10" | "F11" | "F12" | "F14" | "F16" | "F17" | "F18" | "F19" | "F20" | "F21" | "F22" | "F23";
 
 export interface Failure {
     id: FailureId;
@@ -68,6 +76,34 @@ export interface FlowResult {
     layout: "restored" | "defaults" | "blank";
     /** Lines the import preflight trimmed, e.g. "Combos: 6 of 8 (this firmware has 6)". */
     trimmed: string[];
+    /** One-image firmware: each half's side after the update (absent on per-hand builds). */
+    sides?: SidesResult | null;
+}
+
+export interface SidesResult {
+    usb: SideValue | null;
+    other: SideValue | null;
+    /** Halves Keybard set (put back, or as the customer said). */
+    wrote: HalfRole[];
+    /** The halves took their sides from the per-hand build they ran. */
+    migrated: boolean;
+}
+
+/** The flow waits for the customer: which half is plugged into the computer? Or: are these sides right? */
+export interface SideAsk {
+    /** confirm: the firmware chose the sides; "That's right" or "Swap". */
+    reason: "unknown" | "same" | "confirm";
+    /** Keybard knew the plugged-in half's side before: "Keep the plugged-in half as the left half?". */
+    restore?: boolean;
+    /** confirm: where the sides came from (the per-hand build, or the thumb PCBA). */
+    from?: "migrated" | "strap" | null;
+    /** The side to offer first, when Keybard can tell. */
+    suggested: Side | null;
+    /** The sides each half reports now. */
+    usb: SideValue | null;
+    other: SideValue | null;
+    /** Why the last write didn't take (e.g. the thumb strap), in plain words. */
+    note: string | null;
 }
 
 export interface FlowState {
@@ -79,6 +115,8 @@ export interface FlowState {
     title: string;
     toTag: string;
     fromTag: string;
+    /** The version the half with USB ran before (absent in states saved before it was kept). */
+    fromFw?: number;
     files: Partial<Record<Hand, FlowFileRef>>;
     afterwards: Afterwards;
     backup: { snapshotId?: string; fileName: string } | null;
@@ -102,6 +140,12 @@ export interface FlowState {
     failure: Failure | null;
     /** WebHID round trips and stage times, for update-technical.md 1.9. */
     measurements: Record<string, number>;
+    /** One-image firmware: each half's side as read before the install. */
+    sidesBefore?: KnownSides | null;
+    /** sidesBefore came from SIDE (true) or from a per-hand build's updater hand (false). */
+    sidesFromSide?: boolean;
+    /** Set while the flow waits for the customer to say which half is which. */
+    sideAsk?: SideAsk | null;
 }
 
 /** What the flow needs from the app (or the mock): the connection, the layout, backups. */
@@ -121,6 +165,8 @@ export interface FlowHost {
     keymapBlank?(): Promise<boolean>;
     /** Hold a Web Lock and a Screen Wake Lock for the update; returns their release. */
     holdLocks?(): Promise<() => void>;
+    /** SIDE (0x33): each half's side on the one-image firmware. Absent: never checked. */
+    sides?: SideHost;
 }
 
 export interface FlowStore {
@@ -135,7 +181,8 @@ const KEY = "keybard:firmware-update";
 /** Sent on window when this tab's saved update changes, or the flow clears the reset notice. */
 export const FLOW_STATE_EVENT = "keybard:firmware-update-state";
 
-function announce() {
+/** Tell listeners (the reset dialog) that this tab's update or manual install changed. */
+export function announceFlowState() {
     try { if (typeof window !== "undefined") window.dispatchEvent(new Event(FLOW_STATE_EVENT)); } catch { /* nothing listens */ }
 }
 
@@ -163,8 +210,10 @@ export function sessionFlowStore(storage: Storage | null = typeof sessionStorage
             if (!raw) return null;
             try {
                 const state = JSON.parse(raw) as FlowState;
-                const filesRaw = JSON.parse(get(`${KEY}:files`) ?? "{}") as Partial<Record<Hand, string>>;
+                const filesRaw = JSON.parse(get(`${KEY}:files`) ?? "{}") as Partial<Record<Hand | "both", string>>;
                 const files: Partial<Record<Hand, Uint8Array>> = {};
+                // One file for both halves (a pair UF2) is stored once.
+                if (filesRaw.both) { const b = fromB64(filesRaw.both); files[0] = b; files[1] = b; }
                 for (const h of [0, 1] as Hand[]) if (filesRaw[h]) files[h] = fromB64(filesRaw[h]!);
                 return { state, files, backupSvil: get(`${KEY}:backup`) };
             } catch { return null; }
@@ -175,16 +224,17 @@ export function sessionFlowStore(storage: Storage | null = typeof sessionStorage
             // Only a change of update or phase matters to listeners, not each progress step.
             let prev: Pick<FlowState, "id" | "phase"> | null = null;
             try { prev = before ? JSON.parse(before) as FlowState : null; } catch { prev = null; }
-            if (prev?.id !== state.id || prev?.phase !== state.phase) announce();
+            if (prev?.id !== state.id || prev?.phase !== state.phase) announceFlowState();
         },
         saveFiles(files, backupSvil) {
-            const raw: Partial<Record<Hand, string>> = {};
+            const raw: Partial<Record<Hand | "both", string>> = {};
             // The backup first: it's small, and a full storage must not cost the restore.
             if (backupSvil !== null) set(`${KEY}:backup`, backupSvil);
-            for (const h of [0, 1] as Hand[]) if (files[h]) raw[h] = toB64(files[h]!);
+            if (files[0] && files[0] === files[1]) raw.both = toB64(files[0]);
+            else for (const h of [0, 1] as Hand[]) if (files[h]) raw[h] = toB64(files[h]!);
             set(`${KEY}:files`, JSON.stringify(raw));
         },
-        clear() { del(KEY); del(`${KEY}:files`); del(`${KEY}:backup`); announce(); },
+        clear() { del(KEY); del(`${KEY}:files`); del(`${KEY}:backup`); announceFlowState(); },
     };
 }
 
@@ -200,6 +250,8 @@ export function updateInFlight(store: FlowStore = sessionFlowStore()): boolean {
  * the defaults or the wipe, then 0x2A), so the reset dialog must not ask as well.
  */
 export function updateOwnsResetNotice(storage: Storage | null = typeof sessionStorage === "undefined" ? null : sessionStorage): boolean {
+    // A manual install open in this tab acts on the notice too, once the keyboard is back.
+    if (manualOwnsResetNotice(storage)) return true;
     let raw: string | null = null;
     try { raw = storage?.getItem(KEY) ?? null; } catch { return false; }
     if (!raw) return false;
@@ -214,7 +266,7 @@ let clearedSession: { session: unknown } | null = null;
 /** The update sent 0x2A on this connection: the layout loaded before it still shows the notice. */
 export function noteResetNoticeCleared(session: unknown): void {
     clearedSession = { session };
-    announce();
+    announceFlowState();
 }
 
 /** Whether an update cleared the reset notice on this connection. */
@@ -254,7 +306,25 @@ function trace(...args: unknown[]) {
 const POLL_MS = 250;
 const CHORD_WAIT_MS = 35_000;
 const RECONNECT_MS = 30_000;
-const PRESENCE_MS = 10_000;
+/**
+ * The other half answering after its restart, presence MATCH after the half with USB is
+ * back, and a SIDE write's restart. On the mule the other half restarts in about 5 s and
+ * presence matches about 6 s after the reconnect: this is more than twice the worst of those.
+ */
+const PRESENCE_MS = 20_000;
+/**
+ * From the op that restarts the half with USB (COMMIT, SETTINGS_RESET) to its USB going
+ * away. After COMMIT the half writes the image first (its USB stays enumerated, silent,
+ * while it does), so this is longer than the reboot itself.
+ */
+const RESTART_GONE_MS = 20_000;
+/** How long the half with USB may take to answer with the new version after its COMMIT. */
+const CONFIRM_MS = 60_000;
+
+interface RestartWatch {
+    seen(): boolean;
+    stop(): void;
+}
 
 export interface StartInput {
     plan: Plan;
@@ -297,7 +367,7 @@ export class UpdateFlow {
         const files: Partial<Record<Hand, FlowFileRef>> = {};
         for (const h of halves) {
             const f = plan.files[h]!;
-            files[h] = { hand: h, name: `${handName(h)}-${f.manifest.tag || "firmware"}.svup`, sha256: f.sha256, tag: f.manifest.tag, fwVersion: f.manifest.fwVersion };
+            files[h] = { hand: h, name: `svalboard_${f.manifest.tag || "firmware"}.uf2`, sha256: f.sha256, tag: f.manifest.tag, fwVersion: f.manifest.fwVersion };
         }
         // INFO page 1 (the tag) is this half's only; name the other half by its build when it differs.
         const other = plan.board.other;
@@ -312,6 +382,7 @@ export class UpdateFlow {
             title: plan.title,
             toTag: plan.toTag,
             fromTag: plan.fromTag,
+            fromFw: plan.board.usb.fwVersion,
             files,
             // No backup: the layout can't be kept. A blank board needs none.
             afterwards: input.backup || input.afterwards === "blank" ? input.afterwards : "defaults",
@@ -331,6 +402,9 @@ export class UpdateFlow {
             result: null,
             failure: null,
             measurements: {},
+            sidesBefore: plan.sidesBefore ?? null,
+            sidesFromSide: plan.sidesFromSide ?? true,
+            sideAsk: null,
         };
         const flow = new UpdateFlow(host, store, state);
         flow.files = plan.files;
@@ -347,7 +421,8 @@ export class UpdateFlow {
         const saved = store.load();
         if (!saved) return null;
         const flow = new UpdateFlow(host, store, saved.state);
-        for (const h of [0, 1] as Hand[]) if (saved.files[h]) flow.files[h] = await loadSvup(saved.files[h]!);
+        // The file as it was chosen (a pair UF2), or the svup form the tests use.
+        for (const h of [0, 1] as Hand[]) if (saved.files[h]) flow.files[h] = await (isUf2(saved.files[h]!) ? loadFirmwareFile(saved.files[h]!) : loadSvup(saved.files[h]!));
         flow.backupSvil = saved.backupSvil;
         return flow;
     }
@@ -432,6 +507,8 @@ export class UpdateFlow {
         console.warn("[firmware] update stopped", error);
         const o = otherHand(this.state.usbHand);
         if (this.state.committed.includes(o) && !this.state.committed.includes(this.state.usbHand)) return this.halvesDiffer();
+        // After the half with USB took COMMIT, Keybard can't say nothing was changed.
+        if (this.state.committed.includes(this.state.usbHand)) return { id: "F23" };
         if (error instanceof UpdaterStatusError && (error.status === Status.OTHER_CLIENT || error.status === Status.BUSY)) return { id: "F3" };
         if (error instanceof UpdaterStatusError && error.status === Status.NOT_CONFIRMED) return { id: "F4" };
         if (error instanceof UpdaterStatusError && error.status === Status.UNAVAILABLE && this.state.target === "both") return { id: "F5", tags: this.fromTags(), detail: "The other half stopped answering." };
@@ -555,8 +632,9 @@ export class UpdateFlow {
         });
         this.update({ measurements: { ...this.state.measurements, relay_ms: this.now() - t0 } });
 
-        // COMMIT #2: the other half installs. From here it runs the new release.
-        await c.commit(o, arm.nonce, fileO.crcBody & 0xffff);
+        // COMMIT #2: the other half installs. From here it runs the new release. A COMMIT
+        // whose reply went missing may have been taken: it counts as sent, and STATUS says.
+        await this.commitSent(() => c.commit(o, arm.nonce, fileO.crcBody & 0xffff));
         this.update({ committed: [...this.state.committed, o] });
         this.step("other-install");
         this.row(o, { stage: "installing", progress: null });
@@ -611,22 +689,67 @@ export class UpdateFlow {
             await this.waitForChord(c, usbHand);
         }
         await this.transfer(c, usbHand, arm.nonce, file, { erase: "self-erase", send: "self-send", verify: "self-verify" });
-        await c.commit(usbHand, arm.nonce, file.crcBody & 0xffff);
+        // Watch from before COMMIT: the half writes the image, then restarts, and only that
+        // restart says the old firmware is gone.
+        const watch = this.watchRestart();
+        try {
+            // The half writes the image 100 ms after its reply, with USB silent: a reply that
+            // doesn't arrive is a COMMIT it may well have taken, never "nothing was changed".
+            await this.commitSent(() => c.commit(usbHand, arm.nonce, file.crcBody & 0xffff));
+        } catch (error) {
+            watch.stop();
+            throw error;
+        }
         c.untrack();
         this.sessionHand = null;
         this.update({ committed: [...this.state.committed, usbHand] });
         this.step("self-install");
         this.row(usbHand, { stage: "installing", progress: null });
-        await this.reconnect();
+        this.usbRestartSeen = await this.reconnect(watch);
     }
 
-    private async reconnect() {
+    /**
+     * Send a COMMIT. A refusal (a status) throws: the board said no, nothing was installed.
+     * No reply, or the board gone, returns: it may have taken it, and what follows checks.
+     */
+    private async commitSent(send: () => Promise<unknown>): Promise<void> {
+        try {
+            await send();
+        } catch (error) {
+            if (!(error instanceof ReplyTimeoutError || error instanceof DisconnectedError)) throw error;
+            trace("no reply to COMMIT: checking whether the half took it", error);
+        }
+    }
+
+    /** This page saw the half with USB restart after its COMMIT. */
+    private usbRestartSeen = false;
+
+    /**
+     * Watch for the half with USB going away, from just before the op that restarts it: a
+     * restart is known only when it's seen, never assumed from time passing.
+     */
+    private watchRestart(): RestartWatch {
+        const t = this.host.transport();
+        let gone = !t || !t.connected();
+        const off = t?.onDisconnect(() => { gone = true; }) ?? (() => undefined);
+        return { seen: () => gone || !this.host.transport()?.connected(), stop: off };
+    }
+
+    /**
+     * Wait for the half with USB to restart and come back. With a watch from before the op,
+     * waits for the restart itself (up to RESTART_GONE_MS); returns whether it was seen. A
+     * connection still open then is the old one: the caller checks what it runs.
+     */
+    private async reconnect(watch?: RestartWatch): Promise<boolean> {
         const usbHand = this.state.usbHand;
         this.step("reconnect");
         this.row(usbHand, { stage: "restarting", progress: null });
-        // Give the old connection time to drop (COMMIT to reboot: 1-2 s).
-        const gone = this.now() + 5000;
-        while (this.host.transport()?.connected() && this.now() < gone) await this.host.clock.sleep(POLL_MS);
+        const w = watch ?? this.watchRestart();
+        const gone = this.now() + (watch ? RESTART_GONE_MS : 5000);
+        while (!w.seen() && this.now() < gone) await this.host.clock.sleep(POLL_MS);
+        const restarted = w.seen();
+        w.stop();
+        trace(restarted ? "the keyboard went away" : "the keyboard is still on its old connection");
         const t0 = this.now();
         trace("waiting for the keyboard to come back");
         const t = await this.host.waitForDevice(RECONNECT_MS);
@@ -635,12 +758,55 @@ export class UpdateFlow {
         this.update({ measurements: { ...this.state.measurements, reconnect_ms: this.now() - t0 } });
         this.row(usbHand, { stage: "reconnecting", progress: null });
         this.client = new UpdaterClient(t);
+        return restarted;
+    }
+
+    /**
+     * After the half with USB took COMMIT: wait until it has installed the file. Installed
+     * means it answers with the file's version after its restart: the restart was seen, or
+     * its session is back to IDLE (a COMMIT it took leaves it COMMITTING until the restart),
+     * or the version changed. A reinstall of the version it ran is no different: the same
+     * version before the restart proves nothing, the same version after it is success.
+     * "Nothing was changed" (F5) only when the board says it refused: its session latched an
+     * error before any restart. Anything else waits, up to CONFIRM_MS, and then Keybard says
+     * it couldn't confirm the update (F23).
+     */
+    private async confirmUsbVersion(want: FlowFileRef, restarted: boolean): Promise<void> {
+        const deadline = this.now() + CONFIRM_MS;
+        let watch: RestartWatch | null = restarted ? null : this.watchRestart();
+        try {
+            for (;;) {
+                if (watch?.seen()) {
+                    watch.stop();
+                    watch = null;
+                    restarted = true;
+                    await this.reconnect();
+                }
+                const c = this.host.transport()?.connected() ? this.connection() : null;
+                const info = c ? await c.info(HAND_SELF).catch(() => null) : null;
+                if (info && !watch?.seen()) {
+                    const versionChanged = this.state.fromFw !== undefined && want.fwVersion !== this.state.fromFw;
+                    const installed = info.fwVersion === want.fwVersion && (restarted || versionChanged || info.state === State.IDLE);
+                    trace(`the half with USB answers fw ${info.fwVersion} in state ${info.state} (restart seen: ${restarted}, installed: ${installed})`);
+                    if (installed) return;
+                    if (!restarted && info.state === State.ERROR) {
+                        // The board refused the COMMIT when it came to write (or its session ended): it runs what it ran.
+                        const tag = await c!.info1().then((p) => p.tag).catch(() => undefined);
+                        throw new Stop({ id: "F5", tags: tag ? ({ [this.state.usbHand]: tag } as Partial<Record<Hand, string>>) : this.fromTags() });
+                    }
+                }
+                if (this.now() >= deadline) throw new Stop({ id: "F23" });
+                await this.host.clock.sleep(500);
+            }
+        } finally {
+            watch?.stop();
+        }
     }
 
     /** After a reload: pick up after the restart, or say the update didn't finish. */
     private async resume() {
         const { step, usbHand, target } = this.state;
-        const after: Step[] = ["self-install", "reconnect", "check-halves", "settings-reset", "restore"];
+        const after: Step[] = ["self-install", "reconnect", "sides", "check-halves", "settings-reset", "restore"];
         if (this.state.committed.includes(usbHand) || (target !== "both" && target !== usbHand && this.state.committed.length)) {
             if (step === "self-install" || step === "reconnect") {
                 const t = this.host.transport();
@@ -654,8 +820,147 @@ export class UpdateFlow {
         throw new Stop({ id: "F6", tags: this.fromTags() });
     }
 
+    // ---- sides (one-image firmware) -------------------------------------------------------------
+
+    private answer: ((writes: SideWrite[]) => void) | null = null;
+    private sidesResult: SidesResult | null = null;
+
+    /** The customer's answer to "Which half is plugged into your computer?", as the SETs it takes. */
+    answerSide(writes: SideWrite[]): void {
+        const resolve = this.answer;
+        this.answer = null;
+        resolve?.(writes);
+    }
+
+    /** GET until the other half has reported: the split link is up only a while after a restart. */
+    private async readSides(sides: SideHost): Promise<SideAssessment> {
+        const deadline = this.now() + PRESENCE_MS;
+        for (;;) {
+            const a = assessSides(true, await sides.read());
+            if (!sidesSettling(a) || this.now() >= deadline) return a;
+            await this.host.clock.sleep(POLL_MS);
+        }
+    }
+
+    /** One SET; the half restarts. Returns the status. */
+    private async writeSide(sides: SideHost, w: SideWrite): Promise<number> {
+        trace(`side: set the ${w.role} half to ${w.side} (${w.why})`);
+        // The half with USB restarts on its SET: watch from before it.
+        const watch = w.role === "usb" ? this.watchRestart() : null;
+        let status: number;
+        try {
+            status = await sides.write(w.role, w.side);
+        } catch (error) {
+            watch?.stop();
+            throw error;
+        }
+        if (status !== SideStatus.OK && status !== SideStatus.OTHER_ACCEPTED) { watch?.stop(); return status; }
+        if (watch) {
+            await this.reconnect(watch);
+            this.step("sides");
+        } else {
+            // The other half saves it from its main loop and restarts: wait for it to report the new side.
+            const deadline = this.now() + PRESENCE_MS;
+            await this.host.clock.sleep(500);
+            while (this.now() < deadline) {
+                const r = await sides.read();
+                if (r?.otherConnected && r.otherReported && r.otherSide === w.side) break;
+                await this.host.clock.sleep(500);
+            }
+        }
+        return status;
+    }
+
+    /**
+     * After the install, on one-image firmware: read both sides. Keybard never writes a side
+     * by itself. A half that came back unknown or changed, or two halves on one side: it asks
+     * which half is plugged in, the likely answer first. Sides the firmware chose (from the
+     * per-hand build or the thumb PCBA) are shown once: "That's right" or "Swap".
+     */
+    private async checkSides(): Promise<void> {
+        const sides = this.host.sides;
+        if (!sides || !(await sides.supported().catch(() => false))) return;
+        this.step("sides");
+        for (const r of this.state.rows) this.row(r.hand, { stage: "checking-sides", progress: null });
+        const before: KnownSides = { ...(this.state.sidesBefore ?? { usb: null, other: null }) };
+        const wrote = new Set<HalfRole>();
+        let note: string | null = null;
+        let restoreWording = true;
+        // The firmware picked the sides in this update only when Keybard didn't know them from
+        // SIDE before it: a per-hand build before (the sides migrate now), or sides that weren't
+        // set or readable. Sides Keybard read before and finds again need no confirmation, even
+        // when they came from the thumb PCBA.
+        let firmwareChose = this.state.sidesFromSide === false || before.usb === null || before.other === null;
+        /** The customer answered once: the firmware's choice needs no second confirmation. */
+        let answered = false;
+        let migrated = false;
+        for (let round = 0; round < 5; round++) {
+            const a = await this.readSides(sides);
+            const report = await sides.read();
+            const fromStrap = report?.source === SideSource.STRAP;
+            const plan = planAfterUpdate(before, a, { firmwareChose: !answered && firmwareChose });
+            migrated ||= plan.migrated || (firmwareChose && a.kind === "ok");
+            if (plan.action === "none") {
+                const done = currentSides(a);
+                this.update({ sidesBefore: before, sideAsk: null });
+                this.sidesResult = { usb: done.usb, other: done.other, wrote: [...wrote], migrated };
+                return;
+            }
+            const now = currentSides(a);
+            const ask: SideAsk = {
+                reason: plan.action === "confirm" ? "confirm" : a.kind === "same" ? "same" : "unknown",
+                suggested: plan.likelyUsb,
+                restore: plan.restore && restoreWording,
+                from: plan.action === "confirm" ? (fromStrap ? "strap" : "migrated") : null,
+                ...now,
+                note,
+            };
+            const writes = await new Promise<SideWrite[]>((resolve) => {
+                this.answer = resolve;
+                this.update({ sideAsk: ask });
+            });
+            this.update({ sideAsk: null });
+            note = null;
+            answered = true;
+            if (!writes.length) {
+                // "That's right": the customer confirmed the sides as they are.
+                const done = currentSides(a);
+                for (const role of ["usb", "other"] as HalfRole[]) {
+                    const cur = done[role];
+                    if (cur === "left" || cur === "right") before[role] = cur;
+                }
+                this.update({ sidesBefore: before, sideAsk: null });
+                this.sidesResult = { usb: done.usb, other: done.other, wrote: [...wrote], migrated };
+                return;
+            }
+            // What the customer said is now what Keybard knows.
+            for (const role of ["usb", "other"] as HalfRole[]) {
+                const w = writes.find((x) => x.role === role);
+                const cur = now[role];
+                before[role] = w ? w.side : cur === "left" || cur === "right" ? cur : null;
+            }
+            firmwareChose = false;
+            const strap = report?.strap;
+            for (const w of writes) {
+                const status = await this.writeSide(sides, w);
+                if (status === SideStatus.OK || status === SideStatus.OTHER_ACCEPTED) { wrote.add(w.role); continue; }
+                note = explainSideStatus(status, { role: w.role, wanted: w.side, strap: w.role === "usb" ? strap : undefined });
+                restoreWording = false;
+                // Never retry a refused side. The half keeps the side its thumb PCBA gives it,
+                // so the likely answer for the plugged-in half follows from that.
+                if (w.role === "usb") { before.usb = null; before.other = null; } else { before.usb = w.side; before.other = null; }
+                break;
+            }
+        }
+        throw new Stop({ id: "F22", detail: note ?? undefined });
+    }
+
     /** Both halves' versions and presence, then the Afterwards choice, then 0x2A. */
     private async after() {
+        // First what the half with USB runs: everything after reads the new firmware.
+        const wantFirst = this.state.files[this.state.usbHand];
+        if (wantFirst && this.state.committed.includes(this.state.usbHand)) await this.confirmUsbVersion(wantFirst, this.usbRestartSeen);
+        await this.checkSides();
         const { usbHand, target } = this.state;
         const o = otherHand(usbHand);
         this.step("check-halves");
@@ -667,7 +972,8 @@ export class UpdateFlow {
         const page1 = await c.info1();
         tags[usbHand] = page1.tag;
         const wantUsb = this.state.files[usbHand];
-        if (wantUsb && (info.fwVersion !== wantUsb.fwVersion)) throw new Stop({ id: "F5", tags: { [usbHand]: page1.tag } as Partial<Record<Hand, string>>, detail: "The keyboard still runs its old firmware." });
+        // Confirmed above after this flow's COMMIT: a read that differs now is a half that changed again.
+        if (wantUsb && (info.fwVersion !== wantUsb.fwVersion)) throw new Stop(this.state.committed.includes(usbHand) ? { id: "F23" } : { id: "F5", tags: { [usbHand]: page1.tag } as Partial<Record<Hand, string>> });
         // Presence MATCH within 10 s; the other half's version from its INFO.
         const deadline = this.now() + PRESENCE_MS;
         let presence = (await c.status(usbHand)).presence;
@@ -694,7 +1000,7 @@ export class UpdateFlow {
         trace(`storage flags 0x${flags.toString(16)}`, { tags });
         if (flags & 0x02) throw new Stop({ id: "F17" });
         let trimmed: string[] = [];
-        // "Put my layout back" with the backup lost (a reload with storage full): never reset
+        // "Restore my layout" with the backup lost (a reload with storage full): never reset
         // instead. The pre-update snapshot and the downloaded file still hold the layout.
         if (this.state.afterwards === "restore" && !this.backupSvil) {
             throw new Stop({ id: "F16", detail: `This tab lost its copy of the backup. Restore ${this.state.backup?.fileName ?? "the pre-update backup"} from Backups.` });
@@ -712,15 +1018,15 @@ export class UpdateFlow {
             if (!this.state.settingsResetSent) {
                 this.step("settings-reset");
                 this.row(usbHand, { stage: "restarting", progress: null });
-                const r = await c.settingsReset(usbHand, SETTINGS_RESET_BOTH, SETTINGS_RESET_BLANK);
-                trace(`SETTINGS_RESET blank: status ${r.status}`);
+                const watch = this.watchRestart();
+                const r = await c.settingsReset(usbHand, SETTINGS_RESET_BOTH, SETTINGS_RESET_BLANK).catch((e) => { watch.stop(); throw e; });
+                trace(`SETTINGS_RESET blank: status ${r.status} done 0x${r.done.toString(16)}`);
                 if (r.status !== Status.OK) {
-                    const why = r.status === Status.INVALID ? "the keyboard refused the request"
-                        : r.status === Status.UNAVAILABLE ? "the other half didn't answer, or its firmware can't wipe to a blank board" : "the keyboard was busy";
-                    throw new Stop({ id: "F20", detail: `The new firmware is installed, but the keyboard wasn't wiped: ${why}.` });
+                    watch.stop();
+                    throw new Stop({ id: "F20", detail: `The new firmware is installed, but the keyboard wasn't wiped: ${settingsResetProblem(r.status, r.done, usbHand, "wipe to a blank board")}.` });
                 }
                 this.update({ settingsResetSent: true });
-                await this.reconnect();
+                await this.reconnect(watch);
                 c = this.connection();
                 flags = await this.host.readStorageFlags();
                 trace(`storage flags after the wipe 0x${flags.toString(16)}`);
@@ -736,11 +1042,13 @@ export class UpdateFlow {
             // An identical build kept the old settings, or only one half was installed: reset both (F-N2).
             this.step("settings-reset");
             this.row(usbHand, { stage: "restarting", progress: null });
-            const r = await c.settingsReset(usbHand, SETTINGS_RESET_BOTH);
-            trace(`SETTINGS_RESET defaults: status ${r.status}`);
-            if (r.status !== Status.OK) throw new Stop({ id: "F16", detail: `The keyboard couldn't reset its settings (${r.status === Status.UNAVAILABLE ? "the other half didn't answer" : "busy"}).` });
+            const watch = this.watchRestart();
+            const r = await c.settingsReset(usbHand, SETTINGS_RESET_BOTH).catch((e) => { watch.stop(); throw e; });
+            trace(`SETTINGS_RESET defaults: status ${r.status} done 0x${r.done.toString(16)}`);
+            if (r.status !== Status.OK) watch.stop();
+            if (r.status !== Status.OK) throw new Stop({ id: "F21", detail: `The new firmware is installed, but the layout wasn't reset to the default layout: ${settingsResetProblem(r.status, r.done, usbHand, "reset its layout")}.` });
             this.update({ settingsResetSent: true });
-            await this.reconnect();
+            await this.reconnect(watch);
             c = this.connection();
             flags = await this.host.readStorageFlags();
             if (!(flags & 0x04)) console.warn("[firmware] settings reset, but the reset notice isn't set");
@@ -754,8 +1062,26 @@ export class UpdateFlow {
             phase: "result",
             step: "done",
             finishedAt: this.now(),
-            result: { tags, layout: this.state.afterwards === "blank" ? "blank" : this.state.afterwards === "restore" && this.backupSvil ? "restored" : "defaults", trimmed },
+            result: { tags, layout: this.state.afterwards === "blank" ? "blank" : this.state.afterwards === "restore" && this.backupSvil ? "restored" : "defaults", trimmed, sides: this.sidesResult },
         });
+    }
+}
+
+/**
+ * Why SETTINGS_RESET didn't happen, from its status and done mask (bit0 the half with USB,
+ * bit1 the other half): INVALID, UNAVAILABLE, BUSY and FLASH_ERR each mean something else.
+ */
+export function settingsResetProblem(status: number, done: number, usbHand: Hand, what: string): string {
+    switch (status) {
+        case Status.INVALID: return "the keyboard refused the request";
+        case Status.UNAVAILABLE: return `the other half didn't answer, or its firmware can't ${what}. Nothing was changed`;
+        case Status.BUSY: return "the keyboard was busy. Nothing was changed";
+        case Status.FLASH_ERR: {
+            const took = [usbHand, otherHand(usbHand)].filter((_, i) => done & (1 << i)).map((h) => `the ${handName(h)} half`);
+            const failed = [usbHand, otherHand(usbHand)].filter((_, i) => !(done & (1 << i))).map((h) => `the ${handName(h)} half`);
+            return `${failed.join(" and ") || "a half"} couldn't save the reset${took.length ? `; ${took.join(" and ")} took it` : ""}`;
+        }
+        default: return `the keyboard answered ${statusName(status)}`;
     }
 }
 

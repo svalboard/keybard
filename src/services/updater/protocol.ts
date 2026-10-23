@@ -10,6 +10,8 @@
 // The reply is the same packet with value_data rewritten. value_data[0] is
 // always a status. Below, req[i] and rsp[i] index value_data; req[0] is the hand.
 
+import { ReplyTimeoutError } from "./transport";
+
 export const WRAPPER_PREFIX = 0xdd;
 export const VIA_PREFIX = 0xfe;
 export const WRAPPER_ERROR = 0xff;
@@ -30,6 +32,8 @@ export const HAND_RIGHT = 1;
 /** INFO only: "this half", whichever it is. */
 export const HAND_SELF = 0xff;
 export type Hand = typeof HAND_LEFT | typeof HAND_RIGHT;
+/** Manifests and build info only: one image for both halves (svalboard/either). */
+export const HAND_EITHER = 2;
 
 export const otherHand = (hand: Hand): Hand => (hand === HAND_LEFT ? HAND_RIGHT : HAND_LEFT);
 export const handName = (hand: number): "left" | "right" => (hand === HAND_LEFT ? "left" : "right");
@@ -281,7 +285,29 @@ export interface Info0 {
     reportBytes: number;
 }
 
+/**
+ * An INFO page 1 reply: page byte 1, then fw_version, then the tag as printable ASCII padded with
+ * zeros (an empty tag on a dev build). Page 0 never looks like this (its slot sizes and JEDEC bytes sit where the tag would).
+ */
+export function looksLikeInfo1(rsp: Uint8Array): boolean {
+    if (rsp[1] !== 1 || u32(rsp, 2) > 0xffff) return false;
+    let i = 6;
+    while (i < 22 && rsp[i] >= 0x20 && rsp[i] < 0x7f) i++;
+    for (; i < 22; i++) if (rsp[i] !== 0) return false;
+    return true;
+}
+
+/** A reply that answers another request: a late one, after that request timed out. */
+export class ReplyMismatchError extends ReplyTimeoutError {
+    constructor(op: number, what: string) {
+        super(op);
+        this.name = "ReplyMismatchError";
+        this.message = `The keyboard's reply was for another request (${what})`;
+    }
+}
+
 export function decodeInfo0({ rsp }: UpdaterReply): Info0 {
+    if (looksLikeInfo1(rsp)) throw new ReplyMismatchError(Op.INFO, "INFO page 1 read as page 0");
     const flags = rsp[21];
     return {
         status: rsp[0],
@@ -328,6 +354,7 @@ export interface Info1 {
 }
 
 export function decodeInfo1({ rsp }: UpdaterReply): Info1 {
+    if (rsp[0] === Status.OK && !looksLikeInfo1(rsp)) throw new ReplyMismatchError(Op.INFO, "INFO page 0 read as page 1");
     return { status: rsp[0], page: rsp[1], fwVersion: u32(rsp, 2), tag: cString(rsp.subarray(6, 22)) };
 }
 

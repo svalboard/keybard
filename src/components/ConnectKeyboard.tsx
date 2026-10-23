@@ -236,7 +236,7 @@ const ConnectKeyboard = () => {
                     </>
 
                 {!error && connectionFirmware ? (
-                    <UnsupportedFirmwareCard info={connectionFirmware} className="mt-8" />
+                    <UnsupportedFirmwareCard info={connectionFirmware} className="mt-8" onConnect={() => void handleConnect()} />
                 ) : (error || connectionError) && (
                     <div
                         className="mt-8 flex flex-row items-center justify-center gap-2 text-kb-red"

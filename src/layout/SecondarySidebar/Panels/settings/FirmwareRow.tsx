@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { FirmwareSection } from "@/features/firmware/FirmwareSection";
 import { useFirmwareUpdates } from "@/features/firmware/FirmwareUpdateProvider";
 import { describeFirmware } from "@/constants/firmware";
@@ -18,6 +18,17 @@ const FirmwareRow: React.FC = () => {
     // Opening Firmware is seeing the update: the rail dot goes for this release.
     useEffect(() => { if (dot) markSeen?.(); }, [dot, markSeen]);
 
+    // Opening the card reads the board again, so what it shows is never stale (once per
+    // opening; a first read still running needs no second one).
+    const recheck = updates?.recheck;
+    const hasBoard = !!updates?.board;
+    const rechecked = useRef(false);
+    useEffect(() => {
+        if (rechecked.current || !hasBoard || !recheck) return;
+        rechecked.current = true;
+        recheck();
+    }, [hasBoard, recheck]);
+
     if (!updates) {
         // Outside the editor's provider (never in the app): what the board runs, no install.
         const running = keyboard && isConnected ? describeFirmware(keyboard) : null;
@@ -36,6 +47,9 @@ const FirmwareRow: React.FC = () => {
                 onInstall={updates.install}
                 onManual={updates.openManual}
                 onConnect={updates.connect}
+                sides={updates.sides}
+                onRecheck={updates.recheck}
+                checking={updates.checking}
                 heading={false}
             />
         </div>

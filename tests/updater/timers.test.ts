@@ -98,9 +98,9 @@ describe("the transfer with clamped timers", () => {
     it("the send loop waits on each reply, never on a timer: no sleep while either half's image is sent", async () => {
         const clock = new ClampedClock();
         const v3 = await fixtureRelease("v3", 3000);
-        const x4 = await fixtureRelease("x4", 4000, { noChord: true, imageLen: 0x8000 });
+        const x32 = await fixtureRelease("x3.2", 4000, { noChord: true, imageLen: 0x8000 });
         const { board, host } = fakeSetup({ clock, running: v3, noChord: true });
-        const plan = await planInstall(new UpdaterClient(board), { kind: "file", files: [x4.files[0], x4.files[1]] }, { clock, releases: [] });
+        const plan = await planInstall(new UpdaterClient(board), { kind: "file", files: [x32.files[0], x32.files[1]] }, { clock, releases: [] });
         if ("id" in plan) throw new Error(`plan failed: ${plan.id}`);
         const flow = UpdateFlow.create(host, memoryFlowStore(), { plan, afterwards: "blank", backup: null });
         clock.flow = flow;

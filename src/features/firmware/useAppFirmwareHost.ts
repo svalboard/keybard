@@ -14,16 +14,18 @@ import type { CheckRow } from "@/services/updater/checks";
 import { noteResetNoticeCleared } from "@/services/updater/flow";
 import { realClock, type UpdaterTransport } from "@/services/updater/transport";
 import { WebHidUpdaterTransport } from "@/services/updater/webhid-transport";
+import { usbSideHost } from "@/services/side-host";
 import type { KeyboardInfo } from "@/types/keyboard.types";
 import { getKeyLabel } from "@/utils/layers";
 import { restoreLayoutToBoard } from "./restore";
 import type { FirmwareUiHost, UpdateBackup } from "./useFirmwareUpdate";
 
 /** <board name>-<installed release>-<date>.svil */
-export function backupFileName(boardName: string, fromTag: string, now = new Date()): string {
+export function backupFileName(boardName: string, now = new Date()): string {
     const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "Svalboard";
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${safe(boardName)}-${safe(fromTag || "firmware")}-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.svil`;
+    // Named by board and when it was saved: a layout file, not a firmware version.
+    return `${safe(boardName)}-layout-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.svil`;
 }
 
 /** Save text to Downloads with no file picker: the sheet says where it went. */
@@ -66,7 +68,7 @@ async function pauseKeybardHost(): Promise<CheckRow | null> {
         if (!boot.ok) return null;
         const { token } = await boot.json();
         const r = await fetch(`/api/host/command`, { method: "POST", headers: { "Content-Type": "application/json", "X-Keybard-Token": token }, body: JSON.stringify({ op: "disconnect" }), signal: AbortSignal.timeout(1500) });
-        return r.ok ? { id: "host", label: "Keybard Overlay paused", state: "ok" } : { id: "host", label: "Keybard Overlay still connected", state: "warn", detail: "Quit it if the update stops." };
+        return r.ok ? { id: "host", label: "Keybard Overlay paused", state: "ok" } : { id: "host", label: "Keybard Overlay is still using the keyboard.", state: "warn", detail: "Quit Keybard Overlay if the update stops." };
     } catch {
         return null;
     }
@@ -125,7 +127,7 @@ function createAppHost(ref: { current: AppState }): FirmwareUiHost {
             while (Date.now() < deadline) {
                 if (keyboardLoaded() && usbInstance.isOpen()) return transport;
                 const [device] = await listPermittedDevices();
-                if (device && !usbInstance.hasDevice(device)) await ref.current.kb.connectDevice(device).catch(() => false);
+                if (device && !usbInstance.hasDevice(device)) await ref.current.kb.connectDevice(device, { discardEdits: true }).catch(() => false);
                 await realClock.sleep(500);
             }
             return null;
@@ -135,11 +137,15 @@ function createAppHost(ref: { current: AppState }): FirmwareUiHost {
             return info[17] ?? 0;
         },
         async clearStorageReset() {
-            await usbInstance.sendSvil(SvilUSB.CMD_SVIL_STORAGE_RESET_CLEAR, [], {});
-            // The layout loaded on the reconnect still carries the notice: the board has
-            // cleared it now, so the reset dialog must not offer a restore for it.
-            // (Not by editing the layout: that would count as an unsaved change.)
-            noteResetNoticeCleared(ref.current.kb.connectionSessionId);
+            try {
+                await usbInstance.sendSvil(SvilUSB.CMD_SVIL_STORAGE_RESET_CLEAR, [], {});
+            } finally {
+                // The layout loaded on the reconnect still carries the notice: the update has
+                // acted on it, so the reset dialog must not ask again on this connection, even
+                // if 0x2A didn't get through (the board then asks on the next one).
+                // (Not by editing the layout: that would count as an unsaved change.)
+                noteResetNoticeCleared(ref.current.kb.connectionSessionId);
+            }
         },
         async restoreLayout(svil) {
             // Wait for the reconnect's load, so the restore writes onto what the board holds now.
@@ -148,7 +154,7 @@ function createAppHost(ref: { current: AppState }): FirmwareUiHost {
             const { kb: k, changes: ch } = ref.current;
             const current = k.keyboard;
             if (!current) throw new Error("The keyboard didn't finish loading.");
-            return restoreLayoutToBoard(svil, { keyboard: current, setKeyboard: k.setKeyboard, queue: ch.queue, commit: ch.commit });
+            return restoreLayoutToBoard(svil, { keyboard: current, setKeyboard: k.setKeyboard, queue: ch.queue, commit: ch.commit, markSaved: k.markAsSaved });
         },
         async keymapBlank() {
             // After the wipe's reconnect: wait for the load, then every key on every layer is KC_NO.
@@ -158,6 +164,7 @@ function createAppHost(ref: { current: AppState }): FirmwareUiHost {
             return !!keymap?.length && keymap.every((layer) => layer.every((code) => code === 0));
         },
         holdLocks: holdUpdateLocks,
+        sides: usbSideHost(usbInstance),
         async makeBackup({ fromTag, toTag }): Promise<UpdateBackup> {
             const { kb: k, backups: b } = ref.current;
             if (!k.keyboard) throw new Error("No layout loaded.");
@@ -165,10 +172,14 @@ function createAppHost(ref: { current: AppState }): FirmwareUiHost {
             // Parse it back before Start is enabled.
             await fileService.loadFile(new File([svil], "check.svil", { type: "application/json" }));
             const boardName = b.board?.name ?? k.keyboard.name ?? "Svalboard";
-            const fileName = backupFileName(boardName, fromTag);
+            const fileName = backupFileName(boardName);
             let snapshotId: string | undefined;
-            if (b.board) {
-                const meta = await getBackupService()?.saveSnapshot({ boardKey: b.board.key, boardName, svil, kind: "pre-update", pendingCount: 0, fromTag, toTag });
+            // Before the board is identified, keep it under its keyboard UID: the reset dialog
+            // finds a fresh pre-update backup under any key, and the board may come back
+            // under another one anyway.
+            const boardKey = b.board?.key ?? (k.keyboard.kbid ? `uid:${k.keyboard.kbid.toUpperCase()}` : null);
+            if (boardKey) {
+                const meta = await getBackupService()?.saveSnapshot({ boardKey, boardName, svil, kind: "pre-update", pendingCount: 0, fromTag, toTag });
                 snapshotId = meta?.id;
             }
             downloadText(svil, fileName);

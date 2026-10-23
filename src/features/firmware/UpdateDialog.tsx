@@ -1,53 +1,48 @@
-// The update dialog: the sheet turns into the progress view, then the result or a failure.
+// The update dialog: Start, then "Confirm on your keyboard" while the board waits for the
+// key press, then Updating, then Done or a failure. One title per screen names the dialog.
 // Clicking outside never closes it; beforeunload warns while an update runs; a toast asks to
 // keep the tab open when it's hidden (F7).
 
-import { Check, CircleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import type { Afterwards, FlowState } from "@/services/updater/flow";
 import { handName, type Hand } from "@/services/updater/protocol";
 import { FailureView, type FailureAction } from "./failures";
-import { ProgressView, useTicker } from "./ProgressDialog";
+import { FwTitle, InFirmwareDialog, Problem } from "./parts";
+import { awaitingConfirm, ConfirmView, ProgressView, useTicker } from "./ProgressDialog";
 import { UpdateSheet } from "./UpdateSheet";
 import type { UpdateUi } from "./useFirmwareUpdate";
+import type { SideWrite } from "@/services/side-decision";
+import { SideFix, assessmentFromAsk } from "./SideFix";
 
-const HALF = (h: Hand) => (h === 0 ? "Left half" : "Right half");
-
+/** The Done screen's title: what is on the keyboard now. */
 export function resultTitle(s: FlowState): string {
-    if (s.title.startsWith("Update to")) return `Updated to ${s.toTag}`;
-    if (s.title.startsWith("Reinstall")) return `Reinstalled ${s.toTag}`;
-    if (s.title.startsWith("Install custom")) return "Installed custom firmware";
-    return `Installed ${s.toTag}`;
+    const what = s.title.startsWith("Install custom") ? "The custom firmware" : s.toTag;
+    if (s.target !== "both") return `${what} is installed on the ${handName(s.target)} half`;
+    return `${what} is installed`;
 }
 
-/** A1: the result. */
-export function ResultView({ state, notesUrl, onDone }: { state: FlowState; notesUrl?: string; onDone: () => void }) {
+export function resultLine(s: FlowState): string {
+    const layout = s.result?.layout;
+    const line = layout === "restored" ? "Your layout is back on the keyboard." : layout === "blank" ? "Every key is blank, ready for your layout." : "Your keyboard has the default layout.";
+    // One-image firmware: Keybard set a side the customer gave it.
+    return s.result?.sides?.wrote.length ? `${line} Each half knows its side now.` : line;
+}
+
+/** A1: done. */
+export function ResultView({ state, onDone }: { state: FlowState; onDone: () => void }) {
     const r = state.result!;
     return (
-        <div className="flex flex-col gap-3" data-testid="update-result">
-            <h2 className="text-lg font-semibold text-kb-ink">{resultTitle(state)}</h2>
-            <ul className="flex flex-col gap-1 text-sm">
-                {([0, 1] as Hand[]).filter((h) => r.tags[h]).map((h) => (
-                    <li key={h} className="flex items-center gap-2"><Check className="h-4 w-4 text-kb-green" aria-hidden />{HALF(h)} <span className="font-mono">{r.tags[h]}</span></li>
-                ))}
-            </ul>
-            <div className="flex flex-col gap-1 text-sm">
-                <p className="flex flex-wrap items-center gap-2">
-                    <Check className="h-4 w-4 text-kb-green" aria-hidden />
-                    {r.layout === "restored" ? "Layout put back" : r.layout === "blank" ? "Wiped to a blank board" : "Reset to the default layout"}
-                    {state.backup && <span className="font-mono text-xs text-muted-foreground">{state.backup.fileName}</span>}
-                </p>
-                {r.trimmed.map((line) => (
-                    <p key={line} className="flex items-center gap-2 text-kb-orange"><CircleAlert className="h-4 w-4" aria-hidden />{line}</p>
-                ))}
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                {notesUrl ? <a className="text-sm text-kb-primary underline" href={notesUrl} target="_blank" rel="noreferrer">What's new in {state.toTag}</a> : <span />}
-                <Button variant="kb-primary" onClick={onDone}>Done</Button>
-            </div>
+        <div className="flex flex-col gap-4" data-testid="update-result">
+            <FwTitle sub={resultLine(state)}>{resultTitle(state)}</FwTitle>
+            {r.trimmed.length > 0 && (
+                <Problem title="Some of your layout didn't fit this firmware.">
+                    {r.trimmed.map((line) => <p key={line}>{line}</p>)}
+                </Problem>
+            )}
+            <div className="flex justify-end"><Button variant="kb-primary" onClick={onDone}>Done</Button></div>
         </div>
     );
 }
@@ -57,15 +52,17 @@ export interface UpdateDialogProps {
     now: () => number;
     chordLegends: (hand: Hand) => [string, string];
     cancellable: boolean;
-    notesUrl?: string;
     udevCommand?: string;
     onAfterwards: (a: Afterwards) => void;
     onStart: () => void;
     onCancel: () => void;
     onClose: () => void;
     onFailureAction: (a: FailureAction) => void;
-    onOpenBackups?: () => void;
     onSaveManually?: () => void;
+    /** Before an update: send the side fixes the board needs. */
+    onFixSides?: (writes: SideWrite[]) => void;
+    /** During an update: the customer's answer about which half is which. */
+    onAnswerSide?: (writes: SideWrite[]) => void;
 }
 
 function useHiddenToast(active: boolean) {
@@ -99,8 +96,6 @@ export function UpdateDialog(p: UpdateDialogProps) {
     }, [running, ui.kind, p]);
 
     if (ui.kind === "idle" || (ui.kind === "flow" && ui.state.phase === "cancelled")) return null;
-    const label = ui.kind === "sheet" ? ui.plan?.title ?? "Firmware update" : ui.state.title;
-    const usb = ui.kind === "flow" ? ui.state.usbHand : ((ui.plan?.board.usb.hand ?? 1) as Hand);
     return (
         <Dialog open onOpenChange={onOpenChange}>
             <DialogContent
@@ -108,23 +103,46 @@ export function UpdateDialog(p: UpdateDialogProps) {
                 className="sm:max-w-[520px]"
                 onInteractOutside={(e) => e.preventDefault()}
                 onEscapeKeyDown={(e) => { if (running) e.preventDefault(); }}
+                aria-describedby={undefined}
             >
-                <DialogTitle className="sr-only">{label}</DialogTitle>
-                <DialogDescription className="sr-only">Firmware update for the {handName(usb)} half with USB and its other half</DialogDescription>
+                <InFirmwareDialog.Provider value>
                 {ui.kind === "sheet" && (
-                    ui.preFailure ? (
+                    ui.preFailure?.id === "sides" ? (
+                        <div className="flex flex-col gap-4" data-testid="sheet-sides">
+                            <FwTitle sub="Then Keybard checks the keyboard again and offers the update.">Set which half is which first</FwTitle>
+                            <SideFix bare sides={ui.preFailure.sides} busy={ui.sideBusy} note={ui.sideNote} onApply={(w) => p.onFixSides?.(w)} />
+                            <div className="flex justify-end"><Button variant="outline" onClick={p.onCancel}>Cancel</Button></div>
+                        </div>
+                    ) : ui.preFailure ? (
                         <FailureView failure={{ id: ui.preFailure.id === "unsupported" ? "F18" : ui.preFailure.id }} onAction={p.onFailureAction} />
                     ) : (
-                        <UpdateSheet ui={ui} chordLegends={p.chordLegends} onAfterwards={p.onAfterwards} onStart={p.onStart} onCancel={p.onCancel} onOpenBackups={p.onOpenBackups} onSaveManually={p.onSaveManually} />
+                        <UpdateSheet ui={ui} onAfterwards={p.onAfterwards} onStart={p.onStart} onCancel={p.onCancel} onSaveManually={p.onSaveManually} />
                     )
                 )}
-                {ui.kind === "flow" && ui.state.phase === "running" && (
+                {ui.kind === "flow" && ui.state.phase === "running" && ui.state.sideAsk && (
+                    <div className="flex flex-col gap-4" data-testid="flow-sides">
+                        <FwTitle sub={`${ui.state.toTag} is installed on both halves.`}>{ui.state.sideAsk.reason === "confirm" ? "Check which half is which" : "Set which half is which"}</FwTitle>
+                        <SideFix
+                            bare
+                            mode={ui.state.sideAsk.reason === "confirm" ? "confirm" : "fix"}
+                            from={ui.state.sideAsk.from}
+                            restore={ui.state.sideAsk.restore}
+                            sides={assessmentFromAsk(ui.state.sideAsk)}
+                            suggested={ui.state.sideAsk.suggested}
+                            note={ui.state.sideAsk.note}
+                            onApply={(w) => p.onAnswerSide?.(w)}
+                        />
+                    </div>
+                )}
+                {ui.kind === "flow" && ui.state.phase === "running" && !ui.state.sideAsk && (
                     <>
-                        <ProgressView state={ui.state} legends={p.chordLegends(ui.state.usbHand)} now={now} />
+                        {awaitingConfirm(ui.state)
+                            ? <ConfirmView state={ui.state} legends={p.chordLegends(ui.state.usbHand as Hand)} now={now} />
+                            : <ProgressView state={ui.state} now={now} />}
                         {p.cancellable && <div className="flex justify-end"><Button variant="outline" onClick={p.onCancel}>Cancel</Button></div>}
                     </>
                 )}
-                {ui.kind === "flow" && ui.state.phase === "result" && <ResultView state={ui.state} notesUrl={p.notesUrl} onDone={p.onClose} />}
+                {ui.kind === "flow" && ui.state.phase === "result" && <ResultView state={ui.state} onDone={p.onClose} />}
                 {ui.kind === "flow" && ui.state.phase === "failed" && ui.state.failure && (
                     <FailureView failure={ui.state.failure} fromTag={ui.state.fromTag} udevCommand={p.udevCommand} onAction={p.onFailureAction} />
                 )}
@@ -134,6 +152,7 @@ export function UpdateDialog(p: UpdateDialogProps) {
                         <button type="button" className="ml-2 text-kb-primary underline" onClick={dismissToast}>OK</button>
                     </div>
                 )}
+                </InFirmwareDialog.Provider>
             </DialogContent>
         </Dialog>
     );

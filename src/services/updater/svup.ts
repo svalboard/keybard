@@ -1,4 +1,6 @@
-// .svup files: a 108-byte manifest followed by the raw image, nothing between or after.
+// The firmware a host installs: the 108-byte manifest and the raw image. Customers get
+// them inside a pair UF2 (uf2.ts, loadFirmwareFile); the manifest followed by the image is
+// the "svup" form make_update.py writes with --svup, which the tests and the mock board use.
 // Layout: keyboards/svalboard/updater/update_manifest.h (sval_update_manifest_t).
 // The image carries a 32-byte build-info record (update_build_info.h, magic "SVBI").
 
@@ -14,9 +16,14 @@ export const SVBI_BYTES = 32;
 /** F-N1: the image is a no-chord developer build (build-info byte 5). */
 export const BUILD_FLAG_NO_CHORD = 0x40;
 export const BUILD_FLAG_RELEASE = 0x01;
+/** D45: a dev build that keeps its settings across flashes (build-info byte 5); a release board refuses it. */
+export const BUILD_FLAG_KEEP_SETTINGS = 0x80;
+
+/** Why a file can't be installed, in a sentence for the customer. */
+export type FileErrorCode = "not-firmware" | "no-pair" | "damaged" | "newer" | "one-side";
 
 export class SvupError extends Error {
-    constructor(message: string) {
+    constructor(message: string, readonly code: FileErrorCode = "damaged") {
         super(message);
         this.name = "SvupError";
     }
@@ -50,11 +57,12 @@ export interface BuildInfo {
     hand: number;
     pointingId: number;
     noChord: boolean;
+    keepSettings: boolean;
     release: boolean;
 }
 
 export interface SvupFile {
-    /** The whole file. */
+    /** The whole file as it was loaded (the pair UF2; the svup form in tests). */
     bytes: Uint8Array;
     manifestBytes: Uint8Array;
     image: Uint8Array;
@@ -62,7 +70,9 @@ export interface SvupFile {
     buildInfo: BuildInfo | null;
     /** The image's build-info says it skips the approval chord (F-N1). */
     noChord: boolean;
-    /** SHA-256 of the whole .svup, lowercase hex: what pins name. */
+    /** The image's build-info says it keeps its settings across flashes (a dev build, D45). */
+    keepSettings: boolean;
+    /** SHA-256 of the whole file (the pair UF2), lowercase hex: what pins name. */
     sha256: string;
     /** SHA-512 of the 108-byte manifest (ARM reports its first 4 bytes). */
     manifestSha512: Uint8Array;
@@ -79,10 +89,10 @@ function cString(bytes: Uint8Array): string {
 
 /** Parse the 108-byte manifest. Throws SvupError on a malformed one. */
 export function parseManifest(m: Uint8Array): SvupManifest {
-    if (m.length < MANIFEST_BYTES) throw new SvupError("This file is too short to be Svalboard firmware.");
-    if (!SVUP_MAGIC.every((b, i) => m[i] === b)) throw new SvupError("This isn't a Svalboard firmware file (.svup).");
+    if (m.length < MANIFEST_BYTES) throw new SvupError("This file is too short to be Svalboard firmware.", "not-firmware");
+    if (!SVUP_MAGIC.every((b, i) => m[i] === b)) throw new SvupError("This isn't a Svalboard firmware file (.uf2).", "not-firmware");
     const manifestVersion = u16(m, 4);
-    if (manifestVersion !== SVUP_MANIFEST_VERSION) throw new SvupError(`Unsupported .svup manifest version ${manifestVersion}.`);
+    if (manifestVersion !== SVUP_MANIFEST_VERSION) throw new SvupError("This firmware file is newer than this Keybard knows. Reload Keybard to get a newer one.", "newer");
     const flags = u16(m, 10);
     const imageLen = u32(m, 16);
     return {
@@ -132,6 +142,7 @@ export function findBuildInfo(image: Uint8Array): BuildInfo | null {
             hand: image[i + 28],
             pointingId: image[i + 29],
             noChord: !!(flags & BUILD_FLAG_NO_CHORD),
+            keepSettings: !!(flags & BUILD_FLAG_KEEP_SETTINGS),
             release: !!(flags & BUILD_FLAG_RELEASE),
         };
     }
@@ -165,10 +176,15 @@ async function digest(algorithm: "SHA-256" | "SHA-512", data: Uint8Array): Promi
 export const sha256Hex = async (data: Uint8Array): Promise<string> => hex(await digest("SHA-256", data));
 export const sha512 = (data: Uint8Array): Promise<Uint8Array> => digest("SHA-512", data);
 
-/** Parse a .svup and compute everything the flow checks. Throws SvupError. */
+/** Parse the svup form (manifest then image) and compute everything the flow checks. Throws SvupError. */
 export async function loadSvup(input: Uint8Array | ArrayBuffer): Promise<SvupFile> {
     const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
     const { manifestBytes, image, manifest } = splitSvup(bytes);
+    return describeFile(bytes, manifestBytes, image, manifest);
+}
+
+/** Everything the flow checks about a manifest and its image; `bytes` is the file they came in. */
+export async function describeFile(bytes: Uint8Array, manifestBytes: Uint8Array, image: Uint8Array, manifest: SvupManifest): Promise<SvupFile> {
     const buildInfo = findBuildInfo(image);
     const [sha256, manifestSha512, imageSha512] = await Promise.all([sha256Hex(bytes), sha512(manifestBytes), sha512(image)]);
     return {
@@ -178,6 +194,7 @@ export async function loadSvup(input: Uint8Array | ArrayBuffer): Promise<SvupFil
         manifest,
         buildInfo,
         noChord: !!buildInfo?.noChord,
+        keepSettings: !!buildInfo?.keepSettings,
         sha256,
         manifestSha512,
         crcBody: imageCrc(image),

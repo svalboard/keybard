@@ -52,11 +52,11 @@ describe("an update while the editor remounts on each reconnect", () => {
     async function wipeWithRemounts(o: { strict?: boolean; hidden?: boolean } = {}) {
         const clock = new VirtualClock();
         const v3 = await fixtureRelease("v3", 3000);
-        const x4 = await fixtureRelease("x4", 4000, { noChord: true });
+        const x32 = await fixtureRelease("x3.2", 4000, { noChord: true });
         const { board } = fakeSetup({ clock, running: v3, noChord: true });
         const host = new RemountingHost(board, clock);
         const store = memoryFlowStore();
-        const source = { kind: "file" as const, files: [x4.files[0], x4.files[1]] };
+        const source = { kind: "file" as const, files: [x32.files[0], x32.files[1]] };
         let remounts = 0;
         function App() {
             const [gen, setGen] = useState(0);
@@ -69,8 +69,8 @@ describe("an update while the editor remounts on each reconnect", () => {
         try {
             fireEvent.click(screen.getByRole("button", { name: "Open" }));
             await screen.findByTestId("update-sheet");
-            fireEvent.click(await screen.findByRole("radio", { name: "Wipe to a blank board" }));
-            const start = await screen.findByRole("button", { name: /Update anyway|Start update/ });
+            fireEvent.click(await screen.findByRole("radio", { name: "Start from a blank keyboard" }));
+            const start = await screen.findByRole("button", { name: /^(Update anyway|Update)$/ });
             await waitFor(() => expect(start).not.toBeDisabled());
             await act(async () => { fireEvent.click(start); });
             if (o.hidden) await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });

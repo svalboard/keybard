@@ -45,7 +45,12 @@ interface KeyboardContextType {
     loadedFrom: string | null;
     connect: (filters?: HIDDeviceFilter[]) => Promise<boolean>;
     /** Open an already-permitted device (from listPermittedDevices) without the chooser. */
-    connectDevice: (device: HIDDevice) => Promise<boolean>;
+    /**
+     * Connect a permitted device. `discardEdits`: a firmware update's own reconnect, whose
+     * backup already holds the layout; it never asks "discard your edits?" (a native
+     * confirm that would freeze the page mid-update).
+     */
+    connectDevice: (device: HIDDevice, options?: { discardEdits?: boolean }) => Promise<boolean>;
     disconnect: () => Promise<void>;
     loadKeyboard: () => Promise<void>;
     loadFromFile: (file: File, source?: "file" | "demo") => Promise<boolean>;
@@ -207,7 +212,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // separate connection, so a board Keybard can't use leaves whatever is being
     // edited (an offline draft, or another connected board) exactly as it was,
     // and only a usable board gets as far as the "discard your edits?" prompt.
-    const switchTo = useCallback(async (device: HIDDevice) => {
+    const switchTo = useCallback(async (device: HIDDevice, options?: { discardEdits?: boolean }) => {
         setConnectionError(null);
         setConnectionFix(null);
         setConnectionFirmware(null);
@@ -223,7 +228,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 return false;
             }
         }
-        if (!confirmTargetChange()) return false;
+        if (!options?.discardEdits && !confirmTargetChange()) return false;
         setConnectionState("connecting");
         let release: ((discardPending?: boolean) => void) | undefined;
         let changed = false;

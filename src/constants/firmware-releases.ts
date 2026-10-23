@@ -4,8 +4,8 @@
 // - production (keybard.svalboard.com): the newest full release (v<N>) and the one before it;
 // - next (next.keybard.svalboard.com): the newest prerelease (x<N>) and the same v releases;
 // - dev builds: everything listed here.
-// Only releases whose firmware speaks updater protocol 4 (one chord for both halves,
-// settings reset) are listed: an install through Keybard always ends on one of them.
+// Only releases whose firmware speaks updater protocol 4 (one confirmation for both halves,
+// settings reset) and ship one pair UF2 for both halves (x4 on) are listed: an install through Keybard always ends on one of them.
 // A release lands here by PR, with its SHA-256 pins (tech doc 3.4). The list is empty
 // until the first protocol-4 release exists.
 
@@ -13,15 +13,11 @@ export type ReleaseKind = "v" | "x";
 export type Site = "production" | "next" | "dev";
 
 export interface ReleaseFilePin {
-    /** File name under <base>/firmware/<tag>/. */
-    svup: string;
+    /** File name under <base>/firmware/<tag>/: the pair UF2 (svalboard_sval_<tag>.uf2). */
     uf2: string;
-    /** SHA-256 of the .svup, lowercase hex. A carried file that misses it is refused. */
+    /** SHA-256 of the .uf2, lowercase hex. A carried file that misses it is refused. */
     sha256: string;
-    uf2Sha256?: string;
     size: number;
-    /** USB product ID the half comes up with. */
-    pid: number;
 }
 
 export interface FirmwareReleasePin {
@@ -32,9 +28,11 @@ export interface FirmwareReleasePin {
     updaterProtocol: number;
     /** Sval (configurator) protocol of the firmware, when known. */
     svalProtocol?: number;
-    files: { left: ReleaseFilePin; right: ReleaseFilePin };
-    /** Up to three one-line highlights for the Firmware page. */
-    highlights: string[];
+    /**
+     * The release's one file for both halves (x4 on): a pair UF2 of the one image
+     * (svalboard/either). Copied onto either half it installs both; Keybard installs from it too.
+     */
+    file: ReleaseFilePin;
     notesUrl: string;
 }
 
@@ -71,14 +69,11 @@ export function releasesForSite(site: Site, releases: FirmwareReleasePin[] = CAR
     return [...pre, ...full].sort(newestFirst);
 }
 
-/** The carried release and hand whose pinned .svup has this SHA-256. */
-export function matchPin(sha256: string, releases: FirmwareReleasePin[] = CARRIED_RELEASES): { release: FirmwareReleasePin; hand: 0 | 1 } | null {
+/** The carried release whose pinned .uf2 has this SHA-256. */
+export function matchPin(sha256: string, releases: FirmwareReleasePin[] = CARRIED_RELEASES): { release: FirmwareReleasePin } | null {
     const want = sha256.toLowerCase();
-    for (const release of releases) {
-        if (release.files.left.sha256 === want) return { release, hand: 0 };
-        if (release.files.right.sha256 === want) return { release, hand: 1 };
-    }
-    return null;
+    const release = releases.find((r) => r.file.sha256 === want);
+    return release ? { release } : null;
 }
 
 /** Where a carried file is served: same origin, inside this deploy. */

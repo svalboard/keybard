@@ -167,6 +167,9 @@ function generateNonce(): Uint8Array {
   return nonce;
 }
 
+/** How long a late updater reply gets to arrive, after a timeout, before the next request goes out. */
+const UPDATER_DRAIN_MS = 500;
+
 export class SvilUSB {
   // VIA command constants (unchanged, used via wrapper)
   static readonly CMD_VIA_GET_PROTOCOL_VERSION = 0x01;
@@ -370,7 +373,13 @@ export class SvilUSB {
         reject(err);
       });
     }));
-    this.queue = operation.then(() => undefined).catch(() => undefined);
+    // After a timeout the board may still answer that request. Its late reply carries the same
+    // op as the next request's (INFO page 0 and page 1 can't be told apart by the echo), so hold
+    // the next request back and let the timed-out listener swallow the straggler.
+    this.queue = operation.then(() => undefined).catch((error) => {
+      if (!(error instanceof Error) || !/timeout/i.test(error.message)) return undefined;
+      return new Promise<void>((resolve) => updaterTimers().setTimeout(resolve, UPDATER_DRAIN_MS));
+    });
     return operation;
   }
 

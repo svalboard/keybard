@@ -43,7 +43,10 @@ const SettingsPanel = () => {
     const { handleFileImport, reviewFile, importReview } = useLayoutImport();
     // The update the rail's dot pointed at: marked on the Firmware chip, with Firmware
     // open, for this visit (opening Settings clears the rail dot).
-    const firmwareDotNow = !!useFirmwareUpdates()?.status.dot;
+    const firmwareUpdates = useFirmwareUpdates();
+    const firmwareDotNow = !!firmwareUpdates?.status.dot;
+    // The demo's mock board (?fwfake=1) shows firmware with no keyboard connected: it has no name to show.
+    const demoBoard = !isConnected && !!firmwareUpdates?.board;
     const [firmwareDot] = useState(firmwareDotNow);
 
     // Every card opens and collapses, and opens the way it was left in this browser.
@@ -123,7 +126,7 @@ const SettingsPanel = () => {
             case "board":
                 return isConnected
                     ? <BoardIdentitySection />
-                    : <p className="px-3 py-2.5 text-sm text-muted-foreground">Connect a keyboard to see its name and serial.</p>;
+                    : <p className="px-3 py-2.5 text-sm text-muted-foreground">{demoBoard ? "The example keyboard has no name or serial." : "Connect a keyboard to see its name and serial."}</p>;
             case "backups":
                 return (
                     <BackupsSection

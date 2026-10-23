@@ -26,7 +26,8 @@ export interface FirmwareStatus {
 
 export function firmwareStatusFor(board: BoardSummary | null, releases: FirmwareReleasePin[]): { newest: FirmwareReleasePin | null; updateAvailable: boolean } {
     const newest = releases[0] ?? null;
-    if (!board || !newest) return { newest, updateAvailable: false };
+    // A board Keybard couldn't read: no dot until it's read (Check again, or the next connection).
+    if (!board || !newest || board.unread) return { newest, updateAvailable: false };
     if (!board.updater) return { newest, updateAvailable: true };
     const behind = board.halves.some((h) => h.answered && h.fwVersion < newest.fwVersion);
     return { newest, updateAvailable: behind || board.differ };

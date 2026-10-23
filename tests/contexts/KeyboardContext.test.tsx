@@ -291,6 +291,21 @@ describe('KeyboardContext - File Loading', () => {
     confirm.mockRestore();
   });
 
+  it('never asks to discard edits on a firmware update reconnect', async () => {
+    vi.mocked(fileService.loadFile).mockResolvedValue({rows: 1, cols: 1});
+    vi.mocked(usbInstance.openDevice).mockResolvedValue(true);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const { result } = renderHook(() => useKeyboard(), { wrapper });
+    await act(async () => { await result.current.loadFromFile(new File(['{}'], 'draft.svil')); });
+    act(() => result.current.setKeyboard(kb => ({...kb!, name: 'edited'})));
+    let connected: boolean | undefined;
+    await act(async () => { connected = await result.current.connectDevice(chosenDevice, { discardEdits: true }); });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(usbInstance.openDevice).toHaveBeenCalledWith(chosenDevice);
+    expect(connected).toBe(true);
+    confirm.mockRestore();
+  });
+
   it('normalizes string file failures and preserves current target', async () => {
     vi.mocked(fileService.loadFile).mockRejectedValue('Empty file');
     const { result } = renderHook(() => useKeyboard(), { wrapper });

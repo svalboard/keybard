@@ -11,6 +11,12 @@ export interface RestoreTarget {
     setKeyboard: (kb: KeyboardInfo) => void;
     queue: (desc: string, cb: () => Promise<void>, metadata?: Partial<PendingChange>) => Promise<void>;
     commit: () => Promise<boolean>;
+    /**
+     * The board now holds this layout: no pending edits are left, so a later reconnect
+     * asks nothing and leaving the page doesn't warn. (A commit with nothing to write,
+     * or with differences only Keybard keeps, would otherwise leave the editor dirty.)
+     */
+    markSaved?: (kb: KeyboardInfo) => void;
 }
 
 export async function restoreLayoutToBoard(svil: string, t: RestoreTarget): Promise<{ trimmed: string[] }> {
@@ -22,5 +28,6 @@ export async function restoreLayoutToBoard(svil: string, t: RestoreTarget): Prom
     const { keyboardService } = await import("@/services/keyboard.service");
     await importService.syncWithKeyboard(plan.keyboard, t.keyboard, (desc, cb, metadata) => t.queue(desc, cb, { ...metadata, deferCommit: true }), { keyboardService });
     if (!(await t.commit())) throw new Error("Some of the layout couldn't be written.");
+    t.markSaved?.(plan.keyboard);
     return { trimmed: plan.warnings };
 }

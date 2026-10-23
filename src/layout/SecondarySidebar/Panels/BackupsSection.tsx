@@ -5,6 +5,7 @@ import { useBackups } from "@/contexts/BackupContext";
 import { dayKey } from "@/services/backup/retention";
 import type { SnapshotMeta } from "@/services/backup/backup.service";
 import { PINNED_SNAPSHOT_KINDS } from "@/services/backup/store";
+import { backupFirmwareNote, backupReason } from "@/services/backup/describe";
 import { fileService } from "@/services/file.service";
 import { cn } from "@/lib/utils";
 
@@ -12,14 +13,14 @@ const VISIBLE_PER_BOARD = 8;
 
 const isPinned = (snap: SnapshotMeta) => PINNED_SNAPSHOT_KINDS.includes(snap.kind);
 
-/** What kind of snapshot a row is. Pinned ones (before a firmware install, Back up now) are kept until deleted. */
+/**
+ * Why a backup was saved: "Saved before a firmware update", "Saved by hand"... Never named
+ * by a firmware version; that's the muted detail (backupFirmwareNote). Pinned ones (before a
+ * firmware update, by hand) are kept until deleted.
+ */
 export function snapshotKindLabel(snap: SnapshotMeta): string {
-    switch (snap.kind) {
-        case "connected": return "Connected";
-        case "pre-update": return snap.toTag ? `Before ${snap.toTag}` : "Before a firmware install";
-        case "manual": return "Backed up";
-        default: return "Edited";
-    }
+    const why = backupReason(snap);
+    return `Saved ${why}`;
 }
 
 function formatTime(time: number, now = Date.now()): string {
@@ -177,6 +178,7 @@ export default function BackupsSection({ onRestore, forceOpen = false, highlight
                                         </span>
                                         <span className="text-xs text-muted-foreground">
                                             {snap.summary || (snap.kind === "connected" ? "As loaded" : "")}
+                                            {backupFirmwareNote(snap) && <span className="ml-2">{(snap.summary || snap.kind === "connected") ? "· " : ""}{backupFirmwareNote(snap)}</span>}
                                             {snap.includesPending && (
                                                 <span className="ml-2 font-medium text-kb-orange" title={`${snap.pendingCount} change${snap.pendingCount === 1 ? "" : "s"} not yet applied to the board`}>
                                                     Unsent ({snap.pendingCount})

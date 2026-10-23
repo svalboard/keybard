@@ -75,7 +75,7 @@ describe('Settings > Backups', () => {
         const rows = within(groups[0]).getAllByTestId('backup-row');
         expect(rows[0]).toHaveTextContent('3 keys, 1 macro');
         expect(rows[0]).toHaveTextContent('Unsent (4)');
-        expect(rows[1]).toHaveTextContent('Connected');
+        expect(rows[1]).toHaveTextContent('Saved when the keyboard connected');
         expect(rows[1]).not.toHaveTextContent('Unsent');
     });
 
@@ -125,7 +125,7 @@ describe('Settings > Backups', () => {
         expect(screen.queryByRole('button', { name: 'Resume backups' })).toBeNull();
     });
 
-    it('pins Before <release> and manual backups at the top of a board, labelled, beyond the row limit', () => {
+    it('pins before-update and by-hand backups at the top of a board, labelled, beyond the row limit', () => {
         const many = Array.from({ length: 10 }, (_, i) => snap({ id: `e${i}`, boardKey: 'sval:BBBB', boardName: 'Travel', savedAt: now - 10_000 - i }));
         mocks.backups = backups({ snapshots: [
             ...many,
@@ -134,10 +134,13 @@ describe('Settings > Backups', () => {
         ] });
         openBackups();
         const rows = within(boardRegions()[0]).getAllByTestId('backup-row');
-        expect(rows[0]).toHaveTextContent('Backed up');
-        expect(rows[1]).toHaveTextContent('Before x4');
+        expect(rows[0]).toHaveTextContent('Saved by hand');
+        // Named by why it was saved; the firmware it was saved from is a muted detail.
+        expect(rows[1]).toHaveTextContent('Saved before a firmware update');
+        expect(rows[1]).toHaveTextContent('saved from v3 firmware');
+        expect(rows[1]).not.toHaveTextContent('x4');
         expect(rows[0]).toHaveAttribute('data-pinned', 'true');
-        expect(rows[2]).toHaveTextContent('Edited');
+        expect(rows[2]).toHaveTextContent('Saved after a change');
         expect(rows).toHaveLength(2 + 8); // the pins, then the usual eight
         expect(screen.getByRole('button', { name: 'Show all (10)' })).toBeVisible();
     });

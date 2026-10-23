@@ -19,6 +19,7 @@
         "test:e2e:scroll-keys": "python tests/e2e/scroll_keys_e2e.py",
         "test:e2e:tap-dance": "python tests/e2e/tapdance_term_e2e.py",
         "test:e2e:pointing": "python tests/e2e/pointing_e2e.py",
+        "test:e2e:firmware": "python tests/e2e/firmware_manual_e2e.py",
         "build:sval-preview": "tsc && vite build --mode sval-preview",
         "build:svalboard": "tsc && vite build --mode svalboard",
         "build:next": "tsc && vite build --mode next",

@@ -2,10 +2,11 @@ import { useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SVALBOARD_FIRMWARE_URL } from "@/constants/firmware";
 import { currentSite, releasesForSite } from "@/constants/firmware-releases";
 import { ManualInstall } from "@/features/firmware/ManualInstall";
+import { InFirmwareDialog } from "@/features/firmware/parts";
 import type { Afterwards } from "@/services/updater/flow";
 import { PARANOID } from "@/lib/paranoid";
 import type { UnsupportedFirmwareInfo } from "@/utils/unsupported-firmware";
@@ -21,8 +22,12 @@ export function FirmwareLink() {
     );
 }
 
-/** The guided manual install (M), in its own dialog: the way onto firmware Keybard updates. */
-function ManualInstallButton({ fromVial }: { fromVial: boolean }) {
+/**
+ * Install by hand (M), in its own dialog: the way onto firmware Keybard updates. Keybard
+ * isn't connected here (it can't use this firmware), so Connect closes the dialog and the
+ * connect screen takes over: the new firmware connects, the old one shows this card again.
+ */
+function ManualInstallButton({ fromVial, onConnect }: { fromVial: boolean; onConnect?: () => void }) {
     const [open, setOpen] = useState(false);
     const [afterwards, setAfterwards] = useState<Afterwards>("defaults");
     const release = releasesForSite(currentSite())[0] ?? null;
@@ -30,19 +35,19 @@ function ManualInstallButton({ fromVial }: { fromVial: boolean }) {
         <>
             <Button size="sm" variant="kb-primary" className="self-start" onClick={() => setOpen(true)}>Install by hand</Button>
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="sm:max-w-[520px]" onInteractOutside={(e) => e.preventDefault()}>
-                    <DialogTitle className="sr-only">Install firmware by hand</DialogTitle>
-                    <DialogDescription className="sr-only">Download the firmware and copy it onto each half</DialogDescription>
-                    <ManualInstall
-                        release={release}
-                        backup={null}
-                        afterwards={afterwards}
-                        onAfterwards={setAfterwards}
-                        connected={false}
-                        onConnect={() => setOpen(false)}
-                        onClose={() => setOpen(false)}
-                    />
-                    {fromVial && <p className="text-sm">Then click <strong>Import Layout</strong> above the keyboard and choose your saved .vil file.</p>}
+                <DialogContent className="sm:max-w-[480px]" onInteractOutside={(e) => e.preventDefault()} aria-describedby={undefined}>
+                    <InFirmwareDialog.Provider value>
+                        <ManualInstall
+                            release={release}
+                            once
+                            backup={null}
+                            afterwards={afterwards}
+                            onAfterwards={setAfterwards}
+                            onConnect={() => { setOpen(false); onConnect?.(); }}
+                            onClose={() => setOpen(false)}
+                        />
+                        {fromVial && <p className="text-sm">Once Keybard connects, click <strong>Import Layout</strong> above the keyboard and choose your saved .vil file.</p>}
+                    </InFirmwareDialog.Provider>
                 </DialogContent>
             </Dialog>
         </>
@@ -50,7 +55,7 @@ function ManualInstallButton({ fromVial }: { fromVial: boolean }) {
 }
 
 /** Why the keyboard couldn't connect, and how to get it onto firmware Keybard can use. */
-export function UnsupportedFirmwareCard({ info, className, onDismiss }: { info: UnsupportedFirmwareInfo; className?: string; onDismiss?: () => void }) {
+export function UnsupportedFirmwareCard({ info, className, onDismiss, onConnect }: { info: UnsupportedFirmwareInfo; className?: string; onDismiss?: () => void; onConnect?: () => void }) {
     let title: string;
     let body: React.ReactNode;
     switch (info.kind) {
@@ -62,7 +67,7 @@ export function UnsupportedFirmwareCard({ info, className, onDismiss }: { info: 
                         This Svalboard is running the old Vial firmware{info.reportedVersion && <> (<span className="font-mono">{info.reportedVersion}</span>)</>}. Keybard needs Svalboard QMK firmware.
                     </p>
                     <p>First keep your layout: in Vial, choose <strong>File &gt; Save current layout</strong> to save a .vil file.</p>
-                    <ManualInstallButton fromVial />
+                    <ManualInstallButton fromVial onConnect={onConnect} />
                 </>
             );
             break;
@@ -71,7 +76,7 @@ export function UnsupportedFirmwareCard({ info, className, onDismiss }: { info: 
             body = (
                 <>
                     <p>This Svalboard runs a pre-release Svalboard QMK build (Sval protocol {info.svilProto ?? "?"}) that this Keybard can't edit safely.</p>
-                    <ManualInstallButton fromVial={false} />
+                    <ManualInstallButton fromVial={false} onConnect={onConnect} />
                 </>
             );
             break;
@@ -94,7 +99,7 @@ export function UnsupportedFirmwareCard({ info, className, onDismiss }: { info: 
             body = (
                 <>
                     <p>The keyboard didn't answer like Svalboard QMK firmware. If it is a Svalboard, it is probably still running the old Vial firmware. Save your layout in Vial first (<strong>File &gt; Save current layout</strong>).</p>
-                    <ManualInstallButton fromVial />
+                    <ManualInstallButton fromVial onConnect={onConnect} />
                 </>
             );
     }

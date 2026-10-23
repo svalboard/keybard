@@ -7,6 +7,9 @@ import { UpdaterClient } from "@/services/updater/client";
 import { sessionFlowStore, UpdateFlow, type Afterwards, type FlowHost, type FlowState, type FlowStore } from "@/services/updater/flow";
 import { otherHand, type Hand } from "@/services/updater/protocol";
 import { CARRIED_RELEASES, type FirmwareReleasePin } from "@/constants/firmware-releases";
+import type { SideWrite } from "@/services/side-decision";
+import { readSides } from "./board-summary";
+import { applySideWrites } from "./side-actions";
 
 export interface UpdateBackup {
     snapshotId?: string;
@@ -38,6 +41,9 @@ export type UpdateUi =
         backup: BackupStatus;
         afterwards: Afterwards;
         error: string | null;
+        /** Setting the sides before the update (preFailure "sides"). */
+        sideBusy?: boolean;
+        sideNote?: string | null;
     }
     | { kind: "flow"; state: FlowState };
 
@@ -130,12 +136,14 @@ export function useFirmwareUpdate(host: FirmwareUiHost | null, o: UseFirmwareUpd
         }
         try {
             const rows = (await h.prepareRows?.().catch(() => [])) ?? [];
-            const result = await planInstall(new UpdaterClient(t), source, { clock: h.clock, onlyHand, releases, maxSvalProtocol: o.maxSvalProtocol, hostRows: rows });
+            const result = await planInstall(new UpdaterClient(t), source, { clock: h.clock, onlyHand, releases, maxSvalProtocol: o.maxSvalProtocol, hostRows: rows, sides: h.sides });
             if ("id" in result) {
                 setUi((u) => (u.kind === "sheet" ? { ...u, preFailure: result } : u));
                 return;
             }
             setUi((u) => (u.kind === "sheet" ? { ...u, plan: result } : u));
+            // A refused install installs nothing: no backup, no file in Downloads.
+            if (result.refusal) return;
             try {
                 const backup = await h.makeBackup({ fromTag: result.fromTag, toTag: result.toTag });
                 setUi((u) => (u.kind === "sheet" ? { ...u, backup: { state: "ok", fileName: backup.fileName, backup } } : u));
@@ -184,5 +192,23 @@ export function useFirmwareUpdate(host: FirmwareUiHost | null, o: UseFirmwareUpd
         void openSheet(last.source, stale);
     }, [ui, openSheet, forget]);
 
-    return { ui, openSheet, setAfterwards, start, close, retry, finish, flow };
+    /** Before an update: set the sides the sheet asked for, then check the board again. */
+    const fixSides = useCallback(async (writes: SideWrite[]) => {
+        const h = hostRef.current;
+        if (!h || ui.kind !== "sheet") return;
+        const { source, onlyHand } = ui;
+        setUi((u) => (u.kind === "sheet" ? { ...u, sideBusy: true, sideNote: null } : u));
+        const note = await applySideWrites(h, writes);
+        if (note) {
+            const sides = await readSides(h.sides, (ms) => h.clock.sleep(ms)).catch(() => null);
+            setUi((u) => (u.kind === "sheet" ? { ...u, sideBusy: false, sideNote: note, preFailure: sides && u.preFailure?.id === "sides" ? { id: "sides", sides } : u.preFailure } : u));
+            return;
+        }
+        await openSheet(source, onlyHand);
+    }, [ui, openSheet]);
+
+    /** During an update: the customer's answer to "Which half is plugged into your computer?". */
+    const answerSide = useCallback((writes: SideWrite[]) => { flowRef.current?.answerSide(writes); }, []);
+
+    return { ui, openSheet, setAfterwards, start, close, retry, finish, flow, fixSides, answerSide };
 }

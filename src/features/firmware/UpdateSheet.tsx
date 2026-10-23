@@ -1,51 +1,42 @@
-// B1: the one confirm. Checks, backup, warnings, the layout choice, what to do on the keyboard.
+// B1, the Start screen: one sentence, the layout choice, Update. Checks that pass say
+// nothing; one that warns or fails shows as a sentence and what to do about it.
 
-import { Check, CircleAlert, Loader2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CheckRow } from "@/services/updater/checks";
 import type { Afterwards } from "@/services/updater/flow";
 import { handName, otherHand, type Hand } from "@/services/updater/protocol";
-import { ChordDiagram } from "./ChordDiagram";
 import { LayoutChoice } from "./LayoutChoice";
+import { FwTitle, Problem, SectionLabel, Spinner } from "./parts";
 import type { UpdateUi } from "./useFirmwareUpdate";
 
 type SheetUi = Extract<UpdateUi, { kind: "sheet" }>;
 
-const HALF = (h: Hand) => (h === 0 ? "Left half" : "Right half");
-
-function Row({ row }: { row: CheckRow }) {
-    const icon = row.state === "ok" ? <Check className="h-4 w-4 text-kb-green" aria-hidden />
-        : row.state === "pending" ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
-            : row.state === "refuse" ? <XCircle className="h-4 w-4 text-kb-red" aria-hidden />
-                : <CircleAlert className="h-4 w-4 text-kb-orange" aria-hidden />;
-    const tone = row.state === "warn" ? "text-kb-orange" : row.state === "refuse" ? "text-kb-red" : "text-kb-ink";
-    return (
-        <li className="flex items-start gap-2" data-check={row.id} data-state={row.state}>
-            <span className="mt-0.5">{icon}</span>
-            <span className="flex flex-col">
-                <span className={`text-sm font-medium ${tone}`}>{row.label}</span>
-                {row.detail && <span className="text-xs text-muted-foreground">{row.detail}</span>}
-            </span>
-        </li>
-    );
-}
-
 export interface UpdateSheetProps {
     ui: SheetUi;
-    chordLegends: (hand: Hand) => [string, string];
+    chordLegends?: (hand: Hand) => [string, string];
     onAfterwards: (a: Afterwards) => void;
     onStart: () => void;
     onCancel: () => void;
-    onOpenBackups?: () => void;
     onSaveManually?: () => void;
 }
 
-export function UpdateSheet({ ui, chordLegends, onAfterwards, onStart, onCancel, onOpenBackups, onSaveManually }: UpdateSheetProps) {
+function ProblemRow({ row }: { row: CheckRow }) {
+    return <Problem id={row.id} title={row.label}>{row.detail}</Problem>;
+}
+
+/** What the update does, in one sentence. */
+function summary(target: "both" | Hand, usb: Hand): string {
+    if (target === "both") return "Keybard updates both halves through the cable to your computer. It takes about 2 minutes.";
+    if (target === usb) return `Keybard updates the ${handName(usb)} half. It takes about a minute.`;
+    return `Keybard updates the ${handName(otherHand(usb))} half through the split cable. It takes about a minute.`;
+}
+
+export function UpdateSheet({ ui, onAfterwards, onStart, onCancel, onSaveManually }: UpdateSheetProps) {
     const { plan, backup, afterwards } = ui;
     if (ui.error) {
         return (
-            <div className="flex flex-col gap-3">
-                <h2 className="text-lg font-semibold">Can't update right now</h2>
+            <div className="flex flex-col gap-4">
+                <FwTitle>Keybard can't update the keyboard right now</FwTitle>
                 <p role="alert" className="text-sm">{ui.error}</p>
                 <div className="flex justify-end"><Button variant="outline" onClick={onCancel}>Close</Button></div>
             </div>
@@ -53,88 +44,59 @@ export function UpdateSheet({ ui, chordLegends, onAfterwards, onStart, onCancel,
     }
     if (!plan) {
         return (
-            <div className="flex flex-col gap-3" aria-busy="true">
-                <h2 className="text-lg font-semibold">Checking your keyboard</h2>
-                <ul className="flex flex-col gap-2">
-                    <Row row={{ id: "connected", label: "Both halves connected", state: "pending" }} />
-                    <Row row={{ id: "files", label: "Firmware files verified", state: "pending" }} />
-                    <Row row={{ id: "backup", label: "Layout saved", state: "pending" }} />
-                </ul>
+            <div className="flex flex-col gap-4" aria-busy="true" data-testid="update-sheet">
+                <FwTitle>Checking your keyboard</FwTitle>
+                <div className="flex items-center gap-3 text-sm"><Spinner />Reading the firmware on both halves</div>
                 <div className="flex justify-end"><Button variant="outline" onClick={onCancel}>Cancel</Button></div>
             </div>
         );
     }
     const usb = plan.board.usb.hand as Hand;
-    const halves = plan.target === "both" ? "Left and right halves" : `${HALF(plan.target)} only`;
     const refusal = plan.refusal;
     const backupFailed = backup.state === "failed";
-    const checks = plan.checks.filter((c) => c.state !== "warn");
-    const warnings = backupFailed ? [...plan.warnings, { id: "backup-failed", label: "Layout not saved", state: "warn" as const, detail: "Switched to Reset to the default layout." }] : plan.warnings;
-    const anyWarning = warnings.length > 0;
+    const anyWarning = plan.warnings.length > 0 || backupFailed;
     const onlyUsb = plan.otherSilent && plan.target === usb;
-    const primary = onlyUsb ? `Update ${handName(usb)} half only` : anyWarning ? "Update anyway" : "Start update";
-    // A blank board needs no backup: Start doesn't wait for it.
+    const primary = onlyUsb ? `Update the ${handName(usb)} half` : anyWarning ? "Update anyway" : "Update";
+    // A blank keyboard needs no backup: Update doesn't wait for it.
     const ready = !refusal && (backup.state !== "pending" || afterwards === "blank");
-    const legends = chordLegends(usb);
     return (
-        <div className="flex flex-col gap-4" data-testid="update-sheet">
-            <header>
-                <h2 className="text-lg font-semibold text-kb-ink">{plan.title}</h2>
-                <p className="text-sm text-muted-foreground">{halves} · About {plan.target === "both" ? "2 minutes" : "1 minute"}</p>
-            </header>
+        <div className="flex flex-col gap-5" data-testid="update-sheet">
+            <FwTitle sub={refusal ? undefined : summary(plan.target, usb)}>{plan.title}</FwTitle>
 
-            <section aria-label="Checks">
-                <ul className="flex flex-col gap-2">
-                    {checks.map((c) => <Row key={c.id} row={c} />)}
-                    {refusal && !checks.some((c) => c.id === refusal.id) && <Row row={refusal} />}
-                    {warnings.map((w) => <Row key={`w-${w.id}`} row={w} />)}
-                </ul>
-            </section>
-
-            {!refusal && (
-                <>
-                    <section aria-label="Backup" className="flex flex-col gap-1">
-                        {backup.state === "pending" && <Row row={{ id: "backup", label: "Saving your layout", state: "pending" }} />}
-                        {backup.state === "ok" && (
-                            <div className="flex flex-wrap items-center gap-x-2 text-sm">
-                                <Check className="h-4 w-4 text-kb-green" aria-hidden />
-                                <span className="font-medium">Layout saved</span>
-                                <span className="font-mono text-xs">{backup.fileName}</span>
-                                <span className="text-muted-foreground">· Downloads</span>
-                                {onOpenBackups && <button type="button" className="text-kb-primary underline" onClick={onOpenBackups}>Backups</button>}
-                            </div>
-                        )}
-                        {backupFailed && onSaveManually && <button type="button" className="self-start text-sm text-kb-primary underline" onClick={onSaveManually}>Save layout manually</button>}
-                    </section>
-
-                    <LayoutChoice value={afterwards} onChange={onAfterwards} keepDisabled={backup.state !== "ok"} noBackup={backupFailed} />
-
-                    <section aria-label="On the keyboard" className="flex flex-col gap-2 rounded-md border border-kb-gray-border p-3">
-                        {plan.board.noChord ? (
-                            <p className="text-sm font-medium text-kb-orange">Nothing to press: this developer build installs without approval</p>
-                        ) : (
-                            <>
-                                <ChordDiagram hand={usb} legends={legends} />
-                                <p className="text-sm font-medium">Hold {legends[0]} + {legends[1]} once, when the light blinks blue</p>
-                                {plan.target === "both" && <p className="text-xs text-muted-foreground">One hold approves both halves</p>}
-                            </>
-                        )}
-                        <p className="text-xs text-muted-foreground">Keep USB and the split cable connected.</p>
-                        {plan.target === otherHand(usb) && <p className="text-xs text-muted-foreground">Don't type on the {handName(plan.target)} half while it copies.</p>}
-                    </section>
-                </>
+            {refusal && <div role="alert"><ProblemRow row={refusal} /></div>}
+            {!refusal && anyWarning && (
+                <div className="flex flex-col gap-2" data-testid="update-warnings">
+                    {plan.warnings.map((w) => <ProblemRow key={w.id} row={w} />)}
+                    {backupFailed && (
+                        <Problem id="backup-failed" title="Keybard couldn't save your layout.">
+                            Afterward the keyboard starts from the default layout.
+                            {onSaveManually && <> <button type="button" className="text-kb-primary underline" onClick={onSaveManually}>Save it yourself first</button>.</>}
+                        </Problem>
+                    )}
+                </div>
             )}
 
-            <footer className="flex flex-wrap justify-end gap-2">
+            {!refusal && (
+                <section className="flex flex-col gap-2" aria-label="Your layout">
+                    <SectionLabel>Your layout</SectionLabel>
+                    <p className="text-sm">
+                        {backup.state === "ok" ? <>Saved to Downloads just now, before the update, as <span className="break-all font-mono text-xs">{backup.fileName}</span>. Afterward:</>
+                            : backupFailed ? "Afterward:" : "Keybard saves it to Downloads before it starts. Afterward:"}
+                    </p>
+                    <LayoutChoice value={afterwards} onChange={onAfterwards} keepDisabled={backup.state !== "ok"} />
+                </section>
+            )}
+
+            <footer className="flex flex-wrap justify-end gap-2 border-t border-kb-gray-border pt-4">
                 {refusal?.id === "integrity" ? (
                     <>
-                        <Button variant="outline" onClick={() => window.location.reload()}>Reload</Button>
                         <Button variant="outline" onClick={onCancel}>Close</Button>
+                        <Button variant="kb-primary" onClick={() => window.location.reload()}>Reload</Button>
                     </>
                 ) : (
                     <>
-                        <Button variant="outline" onClick={onCancel}>Cancel</Button>
-                        {!refusal && <Button variant="kb-primary" disabled={!ready} onClick={onStart}>{primary}</Button>}
+                        <Button variant="outline" onClick={onCancel}>{refusal ? "Close" : "Cancel"}</Button>
+                        {!refusal && <Button variant="kb-primary" data-primary disabled={!ready} onClick={onStart}>{primary}</Button>}
                     </>
                 )}
             </footer>

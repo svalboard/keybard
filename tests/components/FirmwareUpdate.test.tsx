@@ -16,11 +16,14 @@ describe('UnsupportedFirmwareCard', () => {
         expect(card).toHaveTextContent('File > Save current layout');
         fireEvent.click(screen.getByRole('button', { name: 'Install by hand' }));
         const manual = screen.getByTestId('manual-install');
-        expect(manual).toHaveTextContent('Double-tap its reset button');
+        expect(manual).toHaveTextContent('Press its RESET button twice, about a quarter of a second apart. Too fast and nothing happens.');
         expect(manual).toHaveTextContent('RPI-RP2');
         expect(screen.getByText(/Import Layout/)).toBeInTheDocument();
         // No release carried yet: the manual install links the firmware release
-        expect(screen.getByRole('link', { name: 'Svalboard firmware release' })).toHaveAttribute('href', SVALBOARD_FIRMWARE_URL);
+        expect(screen.getByRole('link', { name: /Svalboard firmware releases/ })).toHaveAttribute('href', SVALBOARD_FIRMWARE_URL);
+        // One title, and it names the dialog
+        expect(screen.getByRole('dialog')).toHaveAccessibleName('Install the newest firmware by hand');
+        expect(manual).not.toHaveTextContent('Download the firmware and copy it onto each half');
     });
 
     it('sends other keyboards elsewhere without the Svalboard download', () => {

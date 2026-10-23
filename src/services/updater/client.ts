@@ -121,7 +121,14 @@ export class UpdaterClient {
     }
 
     async arm(hand: number, mode = ARM_MODE_SINGLE): Promise<ArmReply> {
-        const arm = decodeArm(await this.expect("ARM", await this.op(Op.ARM, hand, armArgs(mode)), Status.OK));
+        const reply = await this.op(Op.ARM, hand, armArgs(mode));
+        if (reply.status !== Status.OK) {
+            // A refused ARM latches ERROR (the red light) with no nonce to abort by: ABORT it
+            // anyway (anyone may while ERROR is latched), so the board doesn't stay red.
+            await this.abort(hand, 0).catch(() => undefined);
+            throw new UpdaterStatusError("ARM", reply.status, reply.rsp[1]);
+        }
+        const arm = decodeArm(reply);
         this.track(arm.nonce, hand);
         return arm;
     }

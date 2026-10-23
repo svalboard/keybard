@@ -62,6 +62,9 @@ export function lightFor(state: FlowState, hand: Hand, now: number): LightPatter
         case "reconnect":
         case "settings-reset":
             return isUsb ? (since < 1500 ? "off" : "default") : "default";
+        case "sides":
+            // A half without a side, or two on the same side, shows the default color and doesn't type.
+            return "default";
         case "check-halves":
             return state.committed.includes(hand) ? "default" : "layer";
         case "restore":
@@ -86,6 +89,7 @@ export function stageLabel(stage: Stage, progress: number | null, otherName: str
         case "restarting": return "Restarting";
         case "reconnecting": return "Reconnecting";
         case "checking-halves": return "Checking both halves";
+        case "checking-sides": return "Checking which half is which";
         case "restoring": return "Putting your layout back";
         case "done": return "Done";
         case "stopped": return "Stopped";

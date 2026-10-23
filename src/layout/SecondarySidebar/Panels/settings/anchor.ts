@@ -37,6 +37,8 @@ export const PANELS_IN_SETTINGS: Record<string, string> = {
     fragments: "hardware",
     hardware: "hardware",
     about: "about",
+    // Not an old panel: lets a review link open Settings at Firmware (?panel=firmware).
+    firmware: "firmware",
 };
 
 /** The Settings section an old panel name opens, if it is one. */

@@ -11,7 +11,8 @@
 // Reply after the wrapper: [0x2C] [format = 1] [USB half: 5 bytes] [other half: 5 bytes]
 // Each half: [flags] [built_for] [detected] [id0] [id1]
 //   flags: bit 0 reported, bit 1 left half, bit 2 the module's driver started,
-//          bit 3 the build drives whichever module is attached
+//          bit 3 the build drives whichever module is attached,
+//          bit 5 the half has no side yet (one-image firmware): bit 1 means nothing
 //   built_for: 0 no pointing module, 1 PMW3360, 2 PMW3389, 5 Azoteq, 6 TrackPoint
 //              (on a bit-3 build, the module it chose at startup; 0 when none answered)
 //   detected: 0 not checked yet, 1 PMW3360, 2 PMW3389, 3 no module answered,
@@ -37,6 +38,8 @@ export interface PointingHalfReport {
     sensorStarted: boolean;
     /** The build drives whichever module answers at startup, so builtFor is the one it chose. */
     auto: boolean;
+    /** One-image firmware: the half has no side yet, so `side` means nothing. Not drawn as a hand. */
+    noSide?: boolean;
     productId: number;
     inverseProductId: number;
 }
@@ -50,6 +53,7 @@ const FLAG_REPORTED = 0x01;
 const FLAG_LEFT = 0x02;
 const FLAG_INIT_OK = 0x04;
 const FLAG_AUTO = 0x08;
+const FLAG_NO_SIDE = 0x20;
 const BLOCK_SIZE = 5;
 
 const MODULES: Record<number, PointingModule> = { 1: "pmw3360", 2: "pmw3389", 5: "azoteq", 6: "trackpoint" };
@@ -66,6 +70,7 @@ function parseHalf(bytes: Uint8Array, offset: number, usb: boolean): PointingHal
         detected: MODULES[detectedCode] ?? (detectedCode === 3 ? "none" : detectedCode === 4 ? "unknown" : null),
         sensorStarted: (flags & FLAG_INIT_OK) !== 0,
         auto: (flags & FLAG_AUTO) !== 0,
+        ...((flags & FLAG_NO_SIDE) !== 0 ? { noSide: true } : {}),
         productId: bytes[offset + 3],
         inverseProductId: bytes[offset + 4],
     };
@@ -74,8 +79,9 @@ function parseHalf(bytes: Uint8Array, offset: number, usb: boolean): PointingHal
 /** Parses a POINTING_HARDWARE reply (command echo first). Null when it has nothing to report. */
 export function parsePointingHardware(reply: Uint8Array, cmd = 0x2c): PointingHardwareReport | null {
     if (reply.length < 2 || reply[0] !== cmd || reply[1] !== 1) return null;
+    // A half with no side has no hand to draw: leave it out.
     const halves = [parseHalf(reply, 2, true), parseHalf(reply, 2 + BLOCK_SIZE, false)].filter(
-        (h): h is PointingHalfReport => h !== null,
+        (h): h is PointingHalfReport => h !== null && !h.noSide,
     );
     return halves.length ? { halves } : null;
 }
