@@ -15,7 +15,8 @@ export const getHeaderIcons = (keycode: string, label: string) => {
     const boostWords = ["boost"];
     const timerWords = ["timer"];
 
-    const isMouse = mouseWords.some((w) => lowerLabel.includes(w));
+    const isMouse = mouseWords.some((w) => lowerLabel.includes(w)) ||
+        /(^|[_()])(BTN\d|MS_|WH_|ACL\d|MOUSE)/i.test(keycode);
     const isSniper = sniperWords.some((w) => lowerLabel.includes(w)) || keycode.includes("SNIPER");
     const isBoost = boostWords.some((w) => lowerLabel.includes(w)) || keycode.includes("BOOST");
     const isTimer = timerWords.some((w) => lowerLabel.includes(w)) || keycode.includes("TIMEOUTS");
