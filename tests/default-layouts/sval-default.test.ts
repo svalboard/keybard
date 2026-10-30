@@ -30,6 +30,13 @@ describe("the QWERTY Example", () => {
         expect(flat(svil.layout[MOUSE])[PINKY_SOUTH]).toBe("SV_SNIPER_3");
     });
 
+    // Board config layer, left index center: SV_OUTPUT_STATUS, as in the firmware. The
+    // firmware's DPI keys stay out; pointer speed is set in Keybard.
+    it("has the firmware's output status key on the board config layer, and no DPI keys", () => {
+        expect(flat(svil.layout[14])[8]).toBe("SV_OUTPUT_STATUS");
+        expect(svil.layout.flatMap(flat).filter((k: string) => /DPI/.test(k))).toEqual([]);
+    });
+
     // This file's tests share one key table, so these run in order: no board first.
     it("loads with no board connected and shows the key as Sniper 3x", () => {
         const kb = fileService.parseContent(text);
