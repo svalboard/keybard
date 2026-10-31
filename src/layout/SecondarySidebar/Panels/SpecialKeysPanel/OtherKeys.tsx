@@ -30,6 +30,7 @@ const OtherKeys = ({ compact, variant: variantOverride }: Props) => {
         { keycode: "QK_ALT_REPEAT_KEY", label: "Alt-Rep" },
         { keycode: "QK_LAYER_LOCK", label: "Lyr Lock" },
         { keycode: "QK_LEADER", label: "Leader" },
+        { keycode: "QK_CAPS_WORD_TOGGLE", label: "Caps Word" },
     ];
 
     return (
@@ -39,7 +40,8 @@ const OtherKeys = ({ compact, variant: variantOverride }: Props) => {
             </span>
             <div className="flex flex-wrap gap-1">
                 {keys.map((k) => {
-                    const displayLabel = keyService.define(k.keycode)?.str || k.label;
+                    const defStr = keyService.define(k.keycode)?.str;
+                    const displayLabel = (defStr && defStr !== k.keycode) ? defStr : k.label;
                     return (
                         <Key
                             key={k.keycode}
