@@ -9,6 +9,7 @@ import { usePanels } from "@/contexts/PanelsContext";
 import { useKeyboard } from "@/contexts/KeyboardContext";
 import { hoverBackgroundClasses, hoverBorderClasses, hoverHeaderClasses } from "@/utils/colors";
 import { getKeyContents } from "@/utils/keys";
+import { getKeyDisplayLabel } from "@/utils/key-display";
 import { Key } from "@/components/Key";
 import { KeyContent } from "@/types/keyboard.types";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ const OverridesPanel: React.FC = () => {
     const { keyboard, setKeyboard } = useKeyboard();
     const persistBinding = useBindingChanges();
     const { selectedLayer } = useLayer();
-    const { layoutMode } = useLayoutSettings();
+    const { layoutMode, internationalLayout } = useLayoutSettings();
     const {
         setItemToEdit,
         setBindingTypeToEdit,
@@ -79,25 +80,15 @@ const OverridesPanel: React.FC = () => {
         await persistBinding(updatedKeyboard, "override", index);
     };
 
-    const renderSmallKey = (content: KeyContent, idx: number, overrideIndex: number) => {
+    const renderSmallKey = (keycode: string, content: KeyContent, idx: number, overrideIndex: number) => {
         const hasContent = (content?.top && content.top !== "KC_NO") || (content?.str && content.str !== "KC_NO" && content.str !== "");
-        const keycode = content?.top || "";
-        const label = (() => {
-            const str = content?.str;
-            if (!str) return "";
-            const parts = str.split('\n');
-            if (parts.length === 1) return parts[0];
-            if (content?.type === 'modmask' && (keycode.includes("S(") || keycode.includes("LSFT") || keycode.includes("RSFT"))) {
-                return parts[0];
-            }
-            return parts[parts.length - 1];
-        })();
+        const label = getKeyDisplayLabel(keycode, content, internationalLayout);
         return (
             <div key={idx} className="relative w-[30px] h-[30px]">
                 <Key
                     isRelative
                     x={0} y={0} w={1} h={1} row={-1} col={-1}
-                    keycode={content?.top || "KC_NO"}
+                    keycode={keycode || "KC_NO"}
                     label={label}
                     keyContents={content}
                     layerColor={hasContent ? "sidebar" : undefined}
@@ -142,9 +133,9 @@ const OverridesPanel: React.FC = () => {
                                 />
                             </div>
                             <div className="flex flex-row items-center justify-center gap-1">
-                                {renderSmallKey(triggerContent, 0, i)}
+                                {renderSmallKey(override.trigger || "KC_NO", triggerContent, 0, i)}
                                 <ArrowRight className="w-3 h-3 text-gray-400 dark:text-neutral-400 mx-0.5" />
-                                {renderSmallKey(replacementContent, 1, i)}
+                                {renderSmallKey(override.replacement || "KC_NO", replacementContent, 1, i)}
                             </div>
                         </div>
                     );
@@ -185,9 +176,9 @@ const OverridesPanel: React.FC = () => {
                     const rowChildren = isDefined ? (
                         <div className="flex flex-row items-center w-full">
                             <div className="flex flex-row items-center gap-1 ml-4 overflow-hidden">
-                                {renderSmallKey(triggerContent, 0, i)}
+                                {renderSmallKey(override.trigger || "KC_NO", triggerContent, 0, i)}
                                 <ArrowRight className="w-3 h-3 text-kb-ink mx-1" />
-                                {renderSmallKey(replacementContent, 1, i)}
+                                {renderSmallKey(override.replacement || "KC_NO", replacementContent, 1, i)}
                             </div>
                         </div>
                     ) : undefined;

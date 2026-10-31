@@ -1,3 +1,5 @@
+import { KEYALIASES } from "@/constants/keygen";
+
 export interface LayoutDefinition {
     label: string;
     value: string;
@@ -463,6 +465,10 @@ export const getLabelForKeycode = (keycode: string, layoutId: string): string | 
     } else if (targetKeycode.startsWith("S(") && targetKeycode.endsWith(")")) {
         targetKeycode = targetKeycode.slice(2, -1);
         isShifted = true;
+    }
+
+    if (KEYALIASES[targetKeycode]) {
+        targetKeycode = String(KEYALIASES[targetKeycode]);
     }
 
     if (US_SHIFT_ALIASES[targetKeycode]) {

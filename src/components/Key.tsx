@@ -219,9 +219,9 @@ export const Key = React.forwardRef<HTMLDivElement, KeyProps>((props, ref) => {
         headerClassName, // Move to start so local classes override it
         "whitespace-nowrap w-full text-center font-semibold py-0 transition-colors duration-200 text-white flex items-center justify-center leading-none",
         isSmall
-            ? "text-[10px] rounded-t-[4px]"
+            ? "text-[10px] rounded-t-[4px] [&_svg]:w-2.5 [&_svg]:h-2.5"
             : isMedium
-                ? "text-[11px] rounded-t-[4px]"
+                ? "text-[11px] rounded-t-[4px] [&_svg]:w-3 [&_svg]:h-3"
                 : "text-sm rounded-t-sm"
     );
 
