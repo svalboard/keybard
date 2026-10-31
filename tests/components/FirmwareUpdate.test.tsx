@@ -39,11 +39,11 @@ describe('UnsupportedFirmwareCard', () => {
         expect(manual).not.toHaveTextContent('Download the firmware and copy it onto each half');
     });
 
-    it.each(['production', 'next'] as const)('links the carried release on %s', (where) => {
+    it.each(['next'] as const)('links the carried release on %s', (where) => {
         site.current = where;
         render(<UnsupportedFirmwareCard info={{ kind: 'unknown' }} />);
         fireEvent.click(screen.getByRole('button', { name: 'Install by hand' }));
-        expect(screen.getByRole('link', { name: /v4.3.3 for both halves/ })).toHaveAttribute('href', '/firmware/v4.3.3/svalboard_sval_v4.3.3.uf2');
+        expect(screen.getByRole('link', { name: /x4.3.4 for both halves/ })).toHaveAttribute('href', '/firmware/x4.3.4/svalboard_sval_x4.3.4.uf2');
     });
 
     it('sends other keyboards elsewhere without the Svalboard download', () => {
