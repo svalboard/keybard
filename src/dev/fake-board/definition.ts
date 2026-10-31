@@ -44,3 +44,6 @@ export const POINTING_FRAGMENT_INSTANCES = instances.flatMap((inst, i) => (inst.
 
 /** SVAL_FRAGMENT_ID_POINTING_NONE: what a pointing slot with no module detects. */
 export const POINTING_NONE_FRAGMENT_ID = DEFINITION.fragments?.pointing_none?.id ?? 0xff;
+
+/** SVAL_FRAGMENT_ID_POINTING_TOUCHPAD_AZOTEQ: a pointing slot with an Azoteq pad. */
+export const POINTING_AZOTEQ_FRAGMENT_ID = DEFINITION.fragments?.pointing_touchpad_azoteq?.id ?? 7;

@@ -17,7 +17,7 @@ import { COMBO_COLORBLIND_SETTING, COMBO_INDICATOR_SETTING } from "@/lib/comboIn
  * description for this page) or a block this page renders itself. To add a
  * preference, add its definition to SETTINGS and its name to a section here.
  */
-export type SettingsBlock = "hardware" | "firmware" | "board" | "backups" | "typing" | "about";
+export type SettingsBlock = "hardware" | "touchpad" | "firmware" | "board" | "backups" | "typing" | "about";
 
 export type SettingsRow =
     | { setting: string; label?: string; description?: string }
@@ -56,6 +56,16 @@ export const SETTINGS_PAGE: SettingsSection[] = [
         defaultOpen: true,
         rows: [{ block: "hardware" }, { block: "board" }],
         summary: "Clusters, pointing devices, ball color and board name",
+    },
+    {
+        id: "touchpad",
+        title: "Touchpad tuning",
+        chip: "Touchpad",
+        // One line and a button that opens the tuning dialog: always open, it is that small.
+        defaultOpen: true,
+        // Only on a board with a touchpad and firmware that has the setting (SettingsPanel).
+        rows: [{ block: "touchpad" }],
+        summary: "Dead zone, tap and hold times, and each pad live",
     },
     {
         id: "firmware",
@@ -116,6 +126,9 @@ export const SETTINGS_PAGE: SettingsSection[] = [
         summary: "Version, manual, community and developer tools",
     },
 ];
+
+/** Sections shown only on some boards: Touchpad tuning needs a touchpad and firmware with the setting. */
+export const CONDITIONAL_SECTIONS = ["touchpad"] as const;
 
 /**
  * Settings that have a definition in SETTINGS but are deliberately not on this

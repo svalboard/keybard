@@ -71,6 +71,9 @@
     --color-kb-back-highlight-fg: var(--kb-back-highlight-fg);
     --color-kb-warn-ink: var(--kb-warn-ink);
     --color-kb-warn-bg: var(--kb-warn-bg);
+    --color-kb-touch-tap: var(--kb-touch-tap);
+    --color-kb-touch-hold: var(--kb-touch-hold);
+    --color-kb-touch-cancel: var(--kb-touch-cancel);
     --color-kb-confirm: var(--kb-confirm);
 }
 
@@ -138,6 +141,15 @@
        @keyframes falls back to the solid color after the CSS build. */
     --kb-back-highlight-soft: rgb(9 158 124 / 0.22);
     --kb-back-highlight-ring: rgb(9 158 124 / 0.85);
+    /* Touchpad tuning view (new; beside the brand tokens): the pad, the finger, its dead zone,
+       the tap window and the hold threshold, and the marks for a click and a cancel. */
+    --kb-touch-pad: #f3f4f5;
+    --kb-touch-edge: #b9bcc0;
+    --kb-touch-finger: #111214;
+    --kb-touch-zone: #6b7079;
+    --kb-touch-tap: #099e7c;
+    --kb-touch-hold: #2563eb;
+    --kb-touch-cancel: #dc2626;
     /* Pinned side-panel editor cues (new; beside the brand tokens, owner review: ?pinCue=). */
     --kb-pin-shadow: 0 10px 14px -10px rgb(0 0 0 / 0.28);
     --kb-pin-divider: #d6d7d8;
@@ -236,6 +248,13 @@
     --kb-confirm: #6ea8ff;
     --kb-back-highlight-soft: rgb(11 180 141 / 0.22);
     --kb-back-highlight-ring: rgb(11 180 141 / 0.85);
+    --kb-touch-pad: #24262a;
+    --kb-touch-edge: #5a5e65;
+    --kb-touch-finger: #f1f2f2;
+    --kb-touch-zone: #a3a6ab;
+    --kb-touch-tap: #0bb48d;
+    --kb-touch-hold: #6ea8ff;
+    --kb-touch-cancel: #f87171;
     --kb-pin-shadow: 0 10px 14px -10px rgb(0 0 0 / 0.7);
     --kb-pin-divider: #3a3d42;
     --kb-pin-zone: #232528;

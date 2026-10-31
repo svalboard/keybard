@@ -15,6 +15,7 @@
  *   pause typing for the matrix tester; ?fakeBoard=turbo6 is this firmware
  *   on a board that ran turbo 6 with both scan waits at 0 before updating
  *   (its migration lands on 15 / 15 µs; it starts fresh on every load);
+ *   ?fakeBoard=touchpad is this firmware with an Azoteq touchpad on each half.
  *   ?fakeBoard=leader0 is firmware from before x4.3.3 whose settings reset
  *   stored a leader timeout of 0 (fresh on every load).
  *   Its settings stay in this browser across reloads (except turbo6 and leader0).
@@ -23,7 +24,9 @@
  *   with ?panel=settings and the old panel names); ?panel=pointing opens the
  *   Pointing Devices panel, where the auto mouse settings are; ?panel=keyboard opens
  *   Standard Keys. ?panel=firmware and
- *   ?panel=backups open Settings at that card.
+ *   ?panel=backups open Settings at that card. ?panel=settings&tune=touchpad
+ *   opens Settings with the Touchpad tuning dialog open, and
+ *   ?panel=pointing&tune=touchpad Pointing Devices with it open.
  */
 import type { ResolvedTheme } from "@/lib/theme";
 
@@ -60,14 +63,14 @@ export function themeFromSearch(search: string): ResolvedTheme | null {
  * "combo-names": this firmware (combo names, typing pause); "old": firmware
  * without combo names; "no-pause": firmware that can't pause typing.
  */
-export type FakeBoardChoice = "combo-names" | "old" | "no-pause" | "turbo6" | "leader0";
+export type FakeBoardChoice = "combo-names" | "old" | "no-pause" | "turbo6" | "leader0" | "touchpad";
 
 /** ?fakeBoard (any value but "old" or "nopause") is the simulated board with combo names; absent is null. */
 export function fakeBoardFromSearch(search: string): FakeBoardChoice | null {
     const value = param(search, FAKE_BOARD_PARAM);
     if (value === null) return null;
     const v = value.trim().toLowerCase();
-    return v === "old" ? "old" : v === "nopause" || v === "no-pause" ? "no-pause" : v === "turbo6" ? "turbo6" : v === "leader0" ? "leader0" : "combo-names";
+    return v === "old" ? "old" : v === "nopause" || v === "no-pause" ? "no-pause" : v === "turbo6" ? "turbo6" : v === "leader0" ? "leader0" : v === "touchpad" ? "touchpad" : "combo-names";
 }
 
 /** ?tester: open the matrix tester on start. */
@@ -183,4 +186,9 @@ export function resetDeepLinksForTests() {
     editStarted = false;
     fakeBoardStarted = false;
     testerStarted = false;
+}
+
+/** ?tune=touchpad: open the Touchpad tuning dialog (with ?panel=settings or ?panel=pointing). */
+export function tuneFromSearch(search: string): boolean {
+    return param(search, "tune")?.trim().toLowerCase() === "touchpad";
 }

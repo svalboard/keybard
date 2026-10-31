@@ -9,6 +9,8 @@ interface RangeControlProps {
     value: number;
     onChange: (value: number) => void;
     compact?: boolean;
+    /** Shown but grayed out and unusable (CustomUIMenuItem.disabledIf). */
+    disabled?: boolean;
 }
 
 /**
@@ -21,7 +23,7 @@ export function rangeInputWidth(min: number, max: number): string {
     return `calc(${digits}ch + 3.25rem)`;
 }
 
-export const RangeControl: React.FC<RangeControlProps> = ({ item, value, onChange, compact = false }) => {
+export const RangeControl: React.FC<RangeControlProps> = ({ item, value, onChange, compact = false, disabled = false }) => {
     // Options format: [min, max] or [min, max, step], in stored units. A displayScale
     // (for example 1000, stored seconds shown as ms) applies to what is shown and typed.
     const options = item.options as number[] | undefined;
@@ -61,6 +63,7 @@ export const RangeControl: React.FC<RangeControlProps> = ({ item, value, onChang
             }}
             className={className}
             style={width}
+            disabled={disabled}
             min={min}
             max={max}
             step={step}
@@ -71,8 +74,8 @@ export const RangeControl: React.FC<RangeControlProps> = ({ item, value, onChang
     if (compact) {
         // Compact: label on top, slider + input inline below
         return (
-            <div className="flex flex-col gap-0.5 py-0.5">
-                <span title={item.description} className="text-xs">{item.label}</span>
+            <div className="flex flex-col gap-0.5 py-0.5" data-disabled={disabled || undefined}>
+                <span title={item.description} className={disabled ? "text-xs text-muted-foreground" : "text-xs"}>{item.label}</span>
                 <div className="flex flex-row items-center gap-1.5">
                     <Slider
                         aria-label={item.label}
@@ -83,6 +86,7 @@ export const RangeControl: React.FC<RangeControlProps> = ({ item, value, onChang
                         min={min}
                         max={max}
                         step={step}
+                        disabled={disabled}
                         className="w-20"
                     />
                     {input("h-6 text-xs text-right px-1 shrink-0")}
@@ -93,8 +97,8 @@ export const RangeControl: React.FC<RangeControlProps> = ({ item, value, onChang
     }
 
     return (
-        <div className="flex flex-col gap-2 p-2 panel-layer-item">
-            <span title={item.description} className="text-md">{item.label}</span>
+        <div className="flex flex-col gap-2 p-2 panel-layer-item" data-disabled={disabled || undefined}>
+            <span title={item.description} className={disabled ? "text-md text-muted-foreground" : "text-md"}>{item.label}</span>
             <div className="flex flex-row items-center gap-3">
                 <Slider
                     aria-label={item.label}
@@ -105,6 +109,7 @@ export const RangeControl: React.FC<RangeControlProps> = ({ item, value, onChang
                     min={min}
                     max={max}
                     step={step}
+                    disabled={disabled}
                     className="flex-grow"
                 />
                 {input("text-right shrink-0")}

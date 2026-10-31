@@ -59,5 +59,7 @@ export const AUTOMOUSE_NO_TIMEOUT_KEY = "id_automouse_no_timeout";
 export function readBackKeys(key: string): string[] {
     if ((TIMING_KEYS as readonly string[]).includes(key)) return [...TIMING_KEYS];
     if (key === AUTOMOUSE_MS_KEY || key === AUTOMOUSE_NO_TIMEOUT_KEY) return [AUTOMOUSE_MS_KEY, AUTOMOUSE_NO_TIMEOUT_KEY];
+    // The touchpad hold time: the board keeps the nearest of its hold times.
+    if (key === "id_pad_hold_ms") return [key];
     return [];
 }

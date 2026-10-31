@@ -4,6 +4,7 @@ import { RangeControl } from "./RangeControl";
 import { DropdownControl } from "./DropdownControl";
 import { ButtonControl } from "./ButtonControl";
 import { ScanRateControl } from "./ScanRateControl";
+import { evaluateShowIf } from "@/utils/show-if-evaluator";
 
 interface CustomUIControlProps {
     item: CustomUIMenuItem;
@@ -33,6 +34,7 @@ export const CustomUIControl: React.FC<CustomUIControlProps> = ({
 
     const valueKey = content[0] as string;
     const currentValue = values.get(valueKey) ?? 0;
+    const disabled = item.disabledIf ? evaluateShowIf(item.disabledIf, values) : false;
 
     const handleChange = (value: number) => {
         onValueChange(valueKey, value);
@@ -63,6 +65,7 @@ export const CustomUIControl: React.FC<CustomUIControlProps> = ({
                     value={currentValue}
                     onChange={handleChange}
                     compact={compact}
+                    disabled={disabled}
                 />
             );
 
@@ -83,6 +86,20 @@ export const CustomUIControl: React.FC<CustomUIControlProps> = ({
                     onClick={handleButtonClick}
                     compact={compact}
                 />
+            );
+
+        case 'link':
+            // App-provided: opens another view (onButtonClick gets the action), writes nothing.
+            return (
+                <div className={compact ? "py-0.5" : "px-3 py-2 panel-layer-item"}>
+                    <button
+                        type="button"
+                        onClick={handleButtonClick}
+                        className={(compact ? "text-xs " : "text-sm ") + "font-medium text-kb-ink underline underline-offset-2 hover:text-kb-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"}
+                    >
+                        {item.label}
+                    </button>
+                </div>
             );
 
         case 'color':

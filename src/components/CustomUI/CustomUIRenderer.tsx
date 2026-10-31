@@ -68,6 +68,11 @@ export const CustomUIRenderer: React.FC<CustomUIRendererProps> = ({
                                     {item.label}
                                 </h3>
                             )}
+                            {item.note && (
+                                <p className={compact ? "text-xs text-muted-foreground max-w-[280px]" : "text-sm text-muted-foreground"}>
+                                    {item.note}
+                                </p>
+                            )}
                             <CustomUIRenderer
                                 items={item.content as CustomUIMenuItem[]}
                                 values={values}
