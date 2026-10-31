@@ -4,7 +4,8 @@ import { QMK_SETTINGS } from "@/constants/qmk-settings";
 import { QmkSettingsSections } from "./QMKSettingsPanel";
 
 const MOUSE_KEYS_SECTION = "Mouse keys";
-const MOUSE_QSIDS = QMK_SETTINGS.tabs.find((tab) => tab.name === MOUSE_KEYS_SECTION)?.fields.map((f) => f.qsid) ?? [];
+const MOUSE_QSIDS = QMK_SETTINGS.tabs.find((tab) => tab.name === MOUSE_KEYS_SECTION)?.fields
+    .filter((f) => !(f.type === "integer" && f.hidden)).map((f) => f.qsid) ?? [];
 
 /**
  * The QMK mouse key timing and speed values, below the keys they tune.

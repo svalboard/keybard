@@ -37,8 +37,8 @@ export function firmwareReleaseUrl(tag: string): string {
 export interface SettingReplacement {
     from: string;
     to: string;
-    /** The firmware release that made the change. */
-    release: string;
+    /** The firmware release that made the change; none when no release did (a value no firmware could use). */
+    release?: string;
 }
 
 export type BoardMenuRefs = Map<string, { item: CustomUIMenuItem; ref: CustomUIValueRef }>;

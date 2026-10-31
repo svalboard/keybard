@@ -1,6 +1,8 @@
 import { QMKSettings } from "../types/qmk";
 
-// THIS IS FROM QMK REPO.
+// THIS IS FROM QMK REPO, with each maximum held at what the firmware variable
+// the setting is applied to can use (VARIABLE_LIMITS below), and the step size
+// hidden: QMK builds it in (info.json mousekey.move_delta), so no setting changes it.
 export const QMK_SETTINGS: QMKSettings = {
   "tabs": [
     {
@@ -41,7 +43,7 @@ export const QMK_SETTINGS: QMKSettings = {
         { "type": "integer", "title": "Quick Tap Term", "qsid": 25, "min": 0, "max": 10000, "width": 2 },
         { "type": "integer", "title": "Tap Code Delay", "qsid": 18, "min": 0, "max": 1000, "width": 2 },
         { "type": "integer", "title": "Tap Hold Caps Delay", "qsid": 19, "min": 0, "max": 1000, "width": 2 },
-        { "type": "integer", "title": "Tapping Toggle", "qsid": 20, "min": 0, "max": 100, "width": 1 },
+        { "type": "integer", "title": "Tapping Toggle", "qsid": 20, "min": 0, "max": 15, "width": 1 },
         { "type": "boolean", "title": "Chordal Hold", "qsid": 26 },
         { "type": "integer", "title": "Flow Tap", "qsid": 27, "min": 0, "max": 10000, "width": 2 }
       ]
@@ -68,22 +70,22 @@ export const QMK_SETTINGS: QMKSettings = {
     {
       "name": "One Shot Keys",
       "fields": [
-        { "type": "integer", "title": "Tapping this number of times holds the key until tapped once again", "qsid": 5, "min": 0, "max": 50, "width": 1 },
+        { "type": "integer", "title": "Tapping this number of times holds the key until tapped once again", "qsid": 5, "min": 0, "max": 15, "width": 1 },
         { "type": "integer", "title": "Time (in ms) before the one shot key is released", "qsid": 6, "min": 0, "max": 60000, "width": 2 }
       ]
     },
     {
       "name": "Mouse keys",
       "fields": [
-        { "type": "integer", "title": "Delay between pressing a movement key and cursor movement", "qsid": 9, "min": 0, "max": 10000, "width": 2 },
-        { "type": "integer", "title": "Time between cursor movements in milliseconds", "qsid": 10, "min": 1, "max": 10000, "width": 2 },
-        { "type": "integer", "title": "Step size", "qsid": 11, "min": 0, "max": 1000, "width": 2 },
-        { "type": "integer", "title": "Maximum cursor speed at which acceleration stops", "qsid": 12, "min": 0, "max": 1000, "width": 2 },
-        { "type": "integer", "title": "Time until maximum cursor speed is reached", "qsid": 13, "min": 0, "max": 1000, "width": 2 },
-        { "type": "integer", "title": "Delay between pressing a wheel key and wheel movement", "qsid": 14, "min": 0, "max": 10000, "width": 2 },
-        { "type": "integer", "title": "Time between wheel movements", "qsid": 15, "min": 0, "max": 10000, "width": 2 },
-        { "type": "integer", "title": "Maximum number of scroll steps per scroll action", "qsid": 16, "min": 0, "max": 1000, "width": 2 },
-        { "type": "integer", "title": "Time until maximum scroll speed is reached", "qsid": 17, "min": 0, "max": 1000, "width": 2 }
+        { "type": "integer", "title": "Delay between pressing a movement key and cursor movement", "qsid": 9, "min": 0, "max": 2550, "width": 2 },
+        { "type": "integer", "title": "Time between cursor movements in milliseconds", "qsid": 10, "min": 1, "max": 255, "width": 2 },
+        { "type": "integer", "title": "Step size", "qsid": 11, "min": 0, "max": 1000, "width": 2, "hidden": true },
+        { "type": "integer", "title": "Maximum cursor speed at which acceleration stops", "qsid": 12, "min": 0, "max": 255, "width": 2 },
+        { "type": "integer", "title": "Time until maximum cursor speed is reached", "qsid": 13, "min": 0, "max": 255, "width": 2 },
+        { "type": "integer", "title": "Delay between pressing a wheel key and wheel movement", "qsid": 14, "min": 0, "max": 2550, "width": 2 },
+        { "type": "integer", "title": "Time between wheel movements", "qsid": 15, "min": 0, "max": 255, "width": 2 },
+        { "type": "integer", "title": "Maximum number of scroll steps per scroll action", "qsid": 16, "min": 0, "max": 255, "width": 2 },
+        { "type": "integer", "title": "Time until maximum scroll speed is reached", "qsid": 17, "min": 0, "max": 255, "width": 2 }
       ]
     },
     {
@@ -125,6 +127,33 @@ export function effectiveSetting(qsid: number, value: number | undefined): numbe
   if (value === 0 && qsid in ZERO_REPLACED_SETTINGS) return ZERO_REPLACED_SETTINGS[qsid];
   return value;
 }
+
+/**
+ * Settings whose largest working value is set by the firmware variable they are
+ * applied to, not by taste. QMK's mouse key variables are 8-bit (mousekey.c):
+ * the intervals, speeds and times to max hold 0-255, and the delays are applied
+ * in 10 ms units, so 0-2550 ms. QMK counts at most 15 taps (tap.count is 4
+ * bits), so a tapping toggle or one-shot tap toggle above 15 is never reached.
+ * Above these, older firmware wrapped the value (an interval of 256 became 0
+ * and moved the cursor every scan); firmware from this change holds it at the
+ * limit. Each is the field's maximum in the table above, and an import holds a
+ * larger value at the limit.
+ */
+export const VARIABLE_LIMITS: Readonly<Record<number, number>> = {
+  5: 15,
+  9: 2550,
+  10: 255,
+  12: 255,
+  13: 255,
+  14: 2550,
+  15: 255,
+  16: 255,
+  17: 255,
+  20: 15,
+};
+
+/** The mouse key step size: stored and reported, but QMK builds it in, so it isn't shown. */
+export const MOUSEKEY_STEP_SIZE_QSID = 11;
 
 /** A setting's range in the settings table. */
 export function settingRange(qsid: number): { min: number; max: number } {

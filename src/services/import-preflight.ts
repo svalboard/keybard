@@ -12,7 +12,7 @@ import { getClosestPresetColor } from '../utils/color-conversion';
 import { sameCombo } from '../utils/combo-names';
 import { boardMenuRefs, migrateCustomValues, type SettingReplacement } from './settings-migrate';
 import { customValueLabel, qmkSettingLabel } from '../utils/setting-labels';
-import { ZERO_REPLACED_SETTINGS, ZERO_SETTINGS_RELEASE } from '../constants/qmk-settings';
+import { VARIABLE_LIMITS, ZERO_REPLACED_SETTINGS, ZERO_SETTINGS_RELEASE } from '../constants/qmk-settings';
 
 export interface ImportReview {
     keyboard: KeyboardInfo;
@@ -42,6 +42,22 @@ function replaceZeroSettings(settings: Record<number, number>): SettingReplaceme
         settings[qsid] = fallback;
         const label = qmkSettingLabel(qsid);
         replaced.push({ from: `${label}: 0`, to: String(fallback), release: ZERO_SETTINGS_RELEASE });
+    }
+    return replaced;
+}
+
+/**
+ * A value above what the firmware variable can hold (a mouse key interval of
+ * 300, say: older firmware wrapped it to 44) is imported as that limit, the
+ * largest value that works, and listed in the replaced-settings note.
+ */
+function holdSettingsAtLimits(settings: Record<number, number>): SettingReplacement[] {
+    const replaced: SettingReplacement[] = [];
+    for (const [id, limit] of Object.entries(VARIABLE_LIMITS)) {
+        const qsid = Number(id);
+        if (!(settings[qsid] > limit)) continue;
+        replaced.push({ from: `${qmkSettingLabel(qsid)}: ${settings[qsid]}`, to: String(limit) });
+        settings[qsid] = limit;
     }
     return replaced;
 }
@@ -110,6 +126,8 @@ export function prepareImport(file: KeyboardInfo, current?: KeyboardInfo): Impor
         if (Object.prototype.hasOwnProperty.call(current.settings ?? {}, id)) next.settings[Number(id)] = value;
         else unavailable.push(qmkSettingLabel(Number(id)));
     }
+    // Before the one-shot block copies 5 and 6, so it gets the held value too.
+    const limited = holdSettingsAtLimits(next.settings);
     // One-shot timeout and tap toggle are QMK settings 6 and 5, restored with the others.
     // Files may also hold an older one-shot block that no Keybard screen could set; the settings win.
     if (next.one_shot && next.settings && 5 in next.settings && 6 in next.settings) next.one_shot = { timeout: next.settings[6], tap_toggle: next.settings[5] };
@@ -117,7 +135,7 @@ export function prepareImport(file: KeyboardInfo, current?: KeyboardInfo): Impor
     const menuItems = new Map([...boardRefs].map(([key, { item }]) => [key, item]));
     // Settings a firmware release replaced land on their replacement, either way round.
     const migrated = migrateCustomValues(file.custom_values ?? [], boardRefs);
-    replaced = [...replaceZeroSettings(next.settings), ...migrated.replaced];
+    replaced = [...replaceZeroSettings(next.settings), ...limited, ...migrated.replaced];
     // Layer colors are custom values on the board; the file loader keeps them in layer_colors.
     const layerColorValues = (file.layer_colors ?? []).flatMap((color, layer) =>
         color && layer < (current.layers ?? 0) ? [{ key: `id_layer${layer}_color`, channel: 0, valueId: 0, data: [color.hue, color.sat] }] : []);

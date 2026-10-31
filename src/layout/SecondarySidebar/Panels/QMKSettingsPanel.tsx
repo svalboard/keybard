@@ -108,6 +108,11 @@ export const QmkSettingsSections: React.FC<QmkSettingsSectionsProps> = ({ sectio
         return keyboard.settings?.[qsid] !== undefined;
     };
 
+    // A field to show: supported, and not one the firmware ignores (hidden)
+    const isShown = (field: QMKSettingsField): boolean => {
+        return isSupported(field.qsid) && !(field.type === "integer" && field.hidden);
+    };
+
     // Handle boolean toggle (with or without bit field)
     const handleBoolToggle = async (qsid: number, bit: number | undefined, checked: boolean) => {
         const key = `${qsid}-${bit ?? 'full'}`;
@@ -169,8 +174,8 @@ export const QmkSettingsSections: React.FC<QmkSettingsSectionsProps> = ({ sectio
 
     // Render a single field
     const renderField = (field: QMKSettingsField, index: number) => {
-        // Check if this QSID is supported
-        if (!isSupported(field.qsid)) {
+        // Check if this QSID is supported and shown
+        if (!isShown(field)) {
             return null;
         }
 
@@ -230,7 +235,7 @@ export const QmkSettingsSections: React.FC<QmkSettingsSectionsProps> = ({ sectio
     // Render a section
     const renderSection = (name: string, fields: QMKSettingsField[]) => {
         // Filter to only supported fields
-        const supportedFields = fields.filter(f => isSupported(f.qsid));
+        const supportedFields = fields.filter(isShown);
         if (supportedFields.length === 0) {
             return null;
         }
@@ -268,7 +273,7 @@ export const QmkSettingsSections: React.FC<QmkSettingsSectionsProps> = ({ sectio
         .filter((tab): tab is (typeof QMK_SETTINGS.tabs)[number] => !!tab);
 
     if (flat) {
-        const fields = tabs.flatMap((tab) => tab.fields).filter((f) => isSupported(f.qsid));
+        const fields = tabs.flatMap((tab) => tab.fields).filter(isShown);
         if (fields.length === 0) return null;
         return <div className="flex flex-col space-y-1">{fields.map((field, index) => renderField(field, index))}</div>;
     }

@@ -25,6 +25,14 @@ describe("settings notes after an import or restore", () => {
         expect(screen.queryByTestId("settings-unavailable")).toBeNull();
     });
 
+    it("lists a value held at the firmware's limit with no release link when no release replaced it", () => {
+        render(<ImportSettingsNotes replaced={[{ from: "Time between cursor movements in milliseconds: 300", to: "255" }]} unavailable={[]} done />);
+        const note = screen.getByTestId("settings-replaced");
+        expect(within(note).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Time between cursor movements in milliseconds: 300 → 255"]);
+        expect(within(note).queryByRole("link")).toBeNull();
+        expect(note.textContent).not.toContain("Release details");
+    });
+
     it("says calmly that settings with no counterpart were left unchanged, names under Details", () => {
         render(<ImportSettingsNotes replaced={[]} unavailable={["Lights: Sparkle", "Tapping Term"]} done />);
         const note = screen.getByTestId("settings-unavailable");

@@ -22,6 +22,8 @@ type QMKSettingsIntegerField = {
     min: number;
     max: number;
     width: number;
+    /** Stored and reported, but the firmware doesn't use it, so no screen shows it. */
+    hidden?: boolean;
 };
 
 export type QMKSettingsField = QMKSettingsBooleanField | QMKSettingsIntegerField;

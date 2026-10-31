@@ -38,7 +38,7 @@ export const ROW_SYNONYMS: Record<string, string[]> = {
 function typingBehaviorWords(): string[] {
     const tabs = QMK_SETTINGS.tabs.filter((tab) => TYPING_BEHAVIOR_SECTIONS.includes(tab.name));
     return ["tap-hold", "tap hold", "hold", "tapping term", "qmk",
-        ...tabs.flatMap((tab) => [tab.name, ...tab.fields.map((f) => f.title)])];
+        ...tabs.flatMap((tab) => [tab.name, ...tab.fields.filter((f) => !(f.type === "integer" && f.hidden)).map((f) => f.title)])];
 }
 
 /** Synonyms for a block row (rendered by the page itself). */

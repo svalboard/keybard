@@ -45,7 +45,10 @@ describe('Mouse Keys > Movement', () => {
     it('shows the mouse key values flat, under a Movement heading', () => {
         render(<MouseMovementSection />);
         expect(screen.getByRole('heading', { name: 'Movement' })).toBeInTheDocument();
-        expect(screen.getByRole('spinbutton', { name: 'Step size' })).toHaveValue(8);
+        expect(screen.getByRole('spinbutton', { name: 'Delay between pressing a movement key and cursor movement' })).toHaveValue(10);
+        // The step size is built into the firmware, so it isn't shown even when the board reports it.
+        expect(screen.queryByRole('spinbutton', { name: 'Step size' })).toBeNull();
+        expect(screen.getByText('Range: 0 - 2550')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Mouse keys' })).toBeNull();
         expect(screen.queryByRole('spinbutton', { name: 'Tapping Term' })).toBeNull();
     });

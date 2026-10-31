@@ -21,7 +21,7 @@ function ReleaseLink({ tag }: { tag: string }) {
 /** "The following settings in this layout have been replaced by:", one line per setting, then the release that did it. */
 export function ReplacedSettingsNote({ replaced }: { replaced: SettingReplacement[] }) {
     if (!replaced.length) return null;
-    const releases = [...new Set(replaced.map((r) => r.release))];
+    const releases = [...new Set(replaced.flatMap((r) => (r.release ? [r.release] : [])))];
     return (
         <div className={NOTE} data-testid="settings-replaced">
             <p>The following settings in this layout have been replaced by:</p>
