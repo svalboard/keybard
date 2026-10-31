@@ -1,7 +1,7 @@
 import type { HostBuild } from './host';
 
 /** The Keybard Overlay release this Keybard offers; a connected host on another release is told about it. */
-export const HOST_RELEASE_TAG = 'v4.3.3';
+export const HOST_RELEASE_TAG = 'v4.3.4';
 export const HOST_RELEASE = `https://github.com/svalboard/keybard/releases/tag/${HOST_RELEASE_TAG}`;
 /** The Windows ZIP's name in a release. Releases before the rename only have the old name. */
 export const hostZipName = (tag: string) => /^(vLaunch|keybard-host-)/.test(tag) ? 'KeybardHost-Windows.zip' : 'KeybardOverlay-Windows.zip';
