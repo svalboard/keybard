@@ -6,7 +6,7 @@ the chip's tap and press-and-hold rules. Run with
 `npm run test:e2e:touchpad-tuning`.
 
   1. Settings: a Touchpad tuning entry beside Hardware, one line and a "Tune
-     touchpad…" button that opens the tuning dialog (dead zone 0.8 mm, tap
+     touchpad…" button that opens the tuning dialog (dead zone 1.2 mm, tap
      time 150 ms, hold time 300 ms, the build's scroll start 1.05 mm);
      ?panel=settings&tune=touchpad opens Settings with the dialog open.
   2. Pointing Devices: "Tune touchpad…" in its Touchpad section (and no
@@ -15,9 +15,9 @@ the chip's tap and press-and-hold rules. Run with
   3. Both pads show live: a touch shows within about 100 ms of touch-down,
      drawn at its reported footprint, and each touch that ends is listed
      with what it did.
-  4. The dead zone writes and saves (0.8 -> 0.5 mm, VIA 55), the board's
+  4. The dead zone writes and saves (1.2 -> 0.5 mm, VIA 55), the board's
      setting follows, and the rolling tap is then listed as canceled; back to
-     0.8 mm it taps again. Tap time and hold time write 56 and 54.
+     1.2 mm it taps again. Tap time and hold time write 56 and 54.
   5. One layout: the controls above both pads, a timer ring in each close-up.
   6. Not shown: no touchpad (?fakeBoard), or firmware without the setting
      (?fakeBoard=old): no Touchpad chip or entry, no link.
@@ -73,7 +73,7 @@ def flow_settings(browser, url):
     entry.get_by_role("button", name=LINK).click()
     dialog = page.get_by_role("dialog", name=TITLE)
     expect(dialog).to_be_visible(timeout=5000)
-    for label, want in (("Dead zone", "0.8 mm"), ("Tap time", "150 ms"), ("Hold time", "300 ms"), ("Scroll start", "1.05 mm")):
+    for label, want in (("Dead zone", "1.2 mm"), ("Tap time", "150 ms"), ("Hold time", "300 ms"), ("Scroll start", "1.05 mm")):
         assert step_value(page, label) == want, f"{label} {step_value(page, label)}"
     page.keyboard.press("Escape")
     expect(dialog).to_be_hidden(timeout=5000)
@@ -167,15 +167,15 @@ def saves_after(page: Page, vid: int) -> int:
 def flow_dead_zone(browser, url):
     context, page, errors = open_page(browser, url, FROM_SETTINGS)
     expect(page.locator("[data-step='Dead zone']")).to_be_visible(timeout=15000)
-    press_slider(page, "Dead zone", "ArrowLeft", 3)  # 0.8 -> 0.7 -> 0.6 -> 0.5
+    press_slider(page, "Dead zone", "ArrowLeft", 6)  # 1.2 -> 1.0 -> 0.9 -> 0.8 -> 0.7 -> 0.6 -> 0.5
     page.wait_for_function("window.keybardFakeBoard.device.firmware.padTuning.deadZone === 50", timeout=5000)
     page.wait_for_timeout(300)
     assert saves_after(page, 55) >= 1, "dead zone not saved"
     assert step_value(page, "Dead zone") == "0.5 mm"
     # The rolling tap (0.6 mm at the lift) is now canceled.
     page.locator("[data-pad] [data-outcome='canceled']", has_text="moved 0.6").first.wait_for(state="attached", timeout=15000)
-    press_slider(page, "Dead zone", "ArrowRight", 3)
-    page.wait_for_function("window.keybardFakeBoard.device.firmware.padTuning.deadZone === 80", timeout=5000)
+    press_slider(page, "Dead zone", "ArrowRight", 6)
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padTuning.deadZone === 120", timeout=5000)
     press_slider(page, "Tap time", "ArrowRight", 1)
     page.wait_for_function("window.keybardFakeBoard.device.firmware.padTuning.tapMs === 175", timeout=5000)
     press_slider(page, "Hold time", "ArrowRight", 1)

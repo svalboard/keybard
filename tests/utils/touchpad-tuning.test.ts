@@ -33,7 +33,7 @@ describe("touchpad tuning flags and tables", () => {
     });
 
     it("matches the firmware's tables: the default first, the rest rising", () => {
-        expect(PAD_DEAD_ZONE_MM100[0]).toBe(80);
+        expect(PAD_DEAD_ZONE_MM100[0]).toBe(120);
         expect(PAD_TAP_MS[0]).toBe(150);
         expect(PAD_SCROLL_MM100[0]).toBe(0);
         for (const t of [PAD_DEAD_ZONE_MM100, PAD_TAP_MS, PAD_SCROLL_MM100]) {

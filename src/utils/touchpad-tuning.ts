@@ -22,7 +22,7 @@ export const TUNE_TOUCHPAD_ACTION = "app:touchpad-tuning";
 export const TUNE_TOUCHPAD_LABEL = "Tune touchpad…";
 
 /** The values the board stores (pad_gestures.c), each default first; a write takes the nearest. */
-export const PAD_DEAD_ZONE_MM100 = [80, 20, 30, 40, 50, 60, 70, 90, 100, 120, 140, 160, 200, 250, 300, 400] as const;
+export const PAD_DEAD_ZONE_MM100 = [120, 20, 30, 40, 50, 60, 70, 80, 90, 100, 140, 160, 200, 250, 300, 400] as const;
 export const PAD_TAP_MS = [150, 50, 75, 100, 125, 175, 200, 225, 250, 300, 350, 400, 500, 600, 800, 1000] as const;
 /** 0 is the build's own (50 chip pixels; 1.05 mm on the native touchpad). */
 export const PAD_SCROLL_MM100 = [0, 30, 50, 75, 100, 125, 150, 175, 200, 250, 300, 400, 500, 600, 800, 1000] as const;
