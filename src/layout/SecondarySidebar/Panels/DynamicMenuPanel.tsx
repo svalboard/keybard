@@ -6,6 +6,10 @@ import { customValueService } from "@/services/custom-value.service";
 import { useChanges } from "@/contexts/ChangesContext";
 import { useKeyboard } from "@/contexts/KeyboardContext";
 import type { CustomUIMenuItem } from "@/types/keyboard.types";
+import { boardHasTouchpad, PAD_KEYS } from "@/utils/touchpad-taps";
+
+const NO_KEYS: ReadonlySet<string> = new Set();
+const PAD_KEY_SET: ReadonlySet<string> = new Set(PAD_KEYS);
 
 interface DynamicMenuPanelProps {
     menuIndex: number;
@@ -31,9 +35,11 @@ const DynamicMenuPanel: React.FC<DynamicMenuPanelProps> = ({ menuIndex, horizont
 
     // Get the menu for this panel
     const menu = keyboard?.menus?.[menuIndex];
+    // The touchpad taps show only while a half has a touchpad.
+    const hasTouchpad = boardHasTouchpad(keyboard);
     const displayItems = useMemo(() => selectPointingMenu(
-        (menu?.content ?? []) as CustomUIMenuItem[], section,
-    ), [menu, section]);
+        (menu?.content ?? []) as CustomUIMenuItem[], section, hasTouchpad ? NO_KEYS : PAD_KEY_SET,
+    ), [menu, section, hasTouchpad]);
 
     // Load values when panel opens or keyboard connects
     useEffect(() => {

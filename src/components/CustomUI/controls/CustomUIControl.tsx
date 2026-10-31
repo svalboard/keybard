@@ -4,6 +4,7 @@ import { RangeControl } from "./RangeControl";
 import { DropdownControl } from "./DropdownControl";
 import { ButtonControl } from "./ButtonControl";
 import { ScanRateControl } from "./ScanRateControl";
+import { evaluateShowIf } from "@/utils/show-if-evaluator";
 
 interface CustomUIControlProps {
     item: CustomUIMenuItem;
@@ -33,6 +34,7 @@ export const CustomUIControl: React.FC<CustomUIControlProps> = ({
 
     const valueKey = content[0] as string;
     const currentValue = values.get(valueKey) ?? 0;
+    const disabled = item.disabledIf ? evaluateShowIf(item.disabledIf, values) : false;
 
     const handleChange = (value: number) => {
         onValueChange(valueKey, value);
@@ -63,6 +65,7 @@ export const CustomUIControl: React.FC<CustomUIControlProps> = ({
                     value={currentValue}
                     onChange={handleChange}
                     compact={compact}
+                    disabled={disabled}
                 />
             );
 

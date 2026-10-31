@@ -42,8 +42,20 @@ function timingCopy(item: CustomUIMenuItem, key: string): Partial<CustomUIMenuIt
     return Number(min) < 1 ? { options: [1, max, ...rest] } : {};
 }
 
+/** Values left out of the tree: e.g. the touchpad taps on a board with no touchpad. */
+export function withoutKeys(items: CustomUIMenuItem[], keys: ReadonlySet<string>): CustomUIMenuItem[] {
+    if (!keys.size) return items;
+    return items.flatMap(item => {
+        if (typeof item.content?.[0] === "string") return keys.has(item.content[0]) ? [] : [item];
+        if (!Array.isArray(item.content)) return [item];
+        const content = withoutKeys(item.content as CustomUIMenuItem[], keys);
+        return content.length ? [{ ...item, content }] : [];
+    });
+}
+
 /** Partition the display tree without changing firmware definitions or value references. */
-export function selectPointingMenu(items: CustomUIMenuItem[], section: PointingMenuSection): CustomUIMenuItem[] {
+export function selectPointingMenu(items: CustomUIMenuItem[], section: PointingMenuSection, hide: ReadonlySet<string> = new Set()): CustomUIMenuItem[] {
+    items = withoutKeys(items, hide);
     if (section === "all") return withoutHidden(items);
     const selected = items.flatMap(item => {
         if (typeof item.content?.[0] === "string") {

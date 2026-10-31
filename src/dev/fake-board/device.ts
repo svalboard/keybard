@@ -21,6 +21,10 @@ export interface FakeSvalboardOptions {
     debounceSwitch?: boolean;
     /** Firmware with the scan timing in µs only (feat/timing-us-only). Default true. */
     timingUsOnly?: boolean;
+    /** Firmware with the touchpad tap setting (VIA values 51-54). Default true. */
+    padGestures?: boolean;
+    /** An Azoteq touchpad on each half. Default false. */
+    touchpad?: boolean;
     /**
      * A board that ran turbo TURBO with both waits at 0 before this firmware:
      * seeded that way, fresh on every load (not saved), so the firmware's boot
@@ -151,6 +155,8 @@ export class FakeSvalboardDevice extends EventTarget {
             flickerLatch: options.flickerLatch ?? true,
             debounceSwitch: options.debounceSwitch ?? true,
             timingUsOnly: options.timingUsOnly ?? true,
+            padGestures: options.padGestures ?? true,
+            touchpad: options.touchpad ?? false,
             onChange: (state) => { if (this.persisting) storeBoard(state); },
             factoryKeymap: seedKeymap(),
         });

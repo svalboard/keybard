@@ -395,6 +395,10 @@ export interface CustomUIMenuItem {
     options?: number[] | string[];               // [min, max] for range, or string[] for dropdown
     content?: (string | number)[] | CustomUIMenuItem[];  // Value ref [key, channel, id] or nested items
     showIf?: string;                             // Conditional visibility expression e.g. "{id_foo} == 1"
+    /** App-provided: one plain line shown under a section's label. */
+    note?: string;
+    /** App-provided: the control is shown but grayed out and unusable while this is true (showIf syntax). */
+    disabledIf?: string;
     /** App-provided: shown units per stored unit (1000 shows stored seconds as ms). Options stay in stored units. */
     displayScale?: number;
 }

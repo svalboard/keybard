@@ -61,7 +61,7 @@ describe("the simulated board's typing pause", () => {
         const { fw } = clocked();
         const id = bootstrap(fw, 3);
         expect(fw.receive(wrapped(id, 0xdf, [0x00]))![5 + 20] & FLAG3_TYPING_PAUSE).toBe(FLAG3_TYPING_PAUSE);
-        const old = new FakeSvalFirmware(blankBoard(), { typingPause: false, flickerLatch: false });
+        const old = new FakeSvalFirmware(blankBoard(), { typingPause: false, flickerLatch: false, padGestures: false });
         const id2 = bootstrap(old, 3);
         expect(old.receive(wrapped(id2, 0xdf, [0x00]))![5 + 20]).toBe(0);
         expect(old.receive(wrapped(id2, 0xdf, [CMD_SVIL_TYPING_PAUSE, 1]))![6]).toBe(0xff);

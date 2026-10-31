@@ -19,7 +19,8 @@ function showBadge(choice: FakeBoardChoice, wipe: () => void) {
     label.textContent = choice === "old" ? `${FAKE_BOARD_PRODUCT_NAME}, firmware without combo names`
         : choice === "no-pause" ? `${FAKE_BOARD_PRODUCT_NAME}, firmware that can't pause typing`
         : choice === "turbo6" ? `${FAKE_BOARD_PRODUCT_NAME}, updated from turbo 6`
-        : choice === "leader0" ? `${FAKE_BOARD_PRODUCT_NAME}, leader timeout stored as 0` : FAKE_BOARD_PRODUCT_NAME;
+        : choice === "leader0" ? `${FAKE_BOARD_PRODUCT_NAME}, leader timeout stored as 0`
+        : choice === "touchpad" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads` : FAKE_BOARD_PRODUCT_NAME;
     const reset = document.createElement("button");
     reset.type = "button";
     reset.textContent = "Reset";
@@ -39,9 +40,11 @@ export function installFakeBoard(choice: FakeBoardChoice): HIDDevice {
     // This firmware has 64-byte reports, the typing pause, the flicker latch and the debounce switch; the older choices have none of them.
     // "turbo6" is this firmware too, on a board that ran turbo 6 with both scan waits at 0 before it.
     // "leader0" is this firmware with the leader timeout of 0 that older firmware's settings reset stored.
-    const current = choice === "combo-names" || choice === "turbo6" || choice === "leader0";
+    // "touchpad" is this firmware with an Azoteq touchpad on each half.
+    const current = choice === "combo-names" || choice === "turbo6" || choice === "leader0" || choice === "touchpad";
     const device = new FakeSvalboardDevice({ comboLabels: choice !== "old", typingPause: current, flickerLatch: current, debounceSwitch: current,
-        timingUsOnly: current, seedTurbo: choice === "turbo6" ? 6 : undefined, seedLeaderZero: choice === "leader0", reportLength: current ? 64 : 32 });
+        timingUsOnly: current, seedTurbo: choice === "turbo6" ? 6 : undefined, seedLeaderZero: choice === "leader0", reportLength: current ? 64 : 32,
+        padGestures: current, touchpad: choice === "touchpad" });
     const wipe = () => {
         device.forgetSettings();
         window.location.reload();

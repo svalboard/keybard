@@ -1,3 +1,4 @@
+import { withTouchpadTaps } from "@/utils/touchpad-taps";
 import { LabelService } from "./label.service";
 import { KleService } from "./kle.service";
 import { keyService } from "./key.service";
@@ -342,7 +343,8 @@ export class KeyboardService {
 
         // Extract VIA3 custom UI menus for dynamic settings panels
         if (payloadData.menus && Array.isArray(payloadData.menus)) {
-            kbinfo.menus = payloadData.menus;
+            // Firmware with the touchpad tap setting: its switches join the pointing menu.
+            kbinfo.menus = withTouchpadTaps(payloadData.menus, kbinfo.feature_flags3);
             console.log("Loaded custom UI menus:", payloadData.menus.map((m: { label?: string }) => m.label).filter(Boolean));
         }
 

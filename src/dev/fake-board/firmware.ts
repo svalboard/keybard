@@ -13,7 +13,7 @@ import {
     LABEL_SIZE, LABEL_TYPE_COMBO, LAYERS, LEADER_SIZE, MACRO_BUFFER_SIZE, MACRO_BUFFER_SIZE_NO_COMBO_LABELS,
     MACRO_COUNT, ROWS, TABLE_ENTRIES, TAP_DANCE_SIZE, type FakeBoardState,
 } from "./board";
-import { DEFINITION_BYTES, FRAGMENT_INSTANCE_COUNT, POINTING_FRAGMENT_INSTANCES, POINTING_NONE_FRAGMENT_ID } from "./definition";
+import { DEFINITION_BYTES, FRAGMENT_INSTANCE_COUNT, POINTING_AZOTEQ_FRAGMENT_ID, POINTING_FRAGMENT_INSTANCES, POINTING_NONE_FRAGMENT_ID } from "./definition";
 
 // ---- client wrapper (client_wrapper.c / .h) --------------------------------
 const WRAPPER_PREFIX = 0xdd;
@@ -46,6 +46,10 @@ export const FLAG2_COMBO_LABELS = 0x80;
 export const FLAG3_TYPING_PAUSE = 0x04;
 // flags3 bit 3: flicker latch (0x3D).
 export const FLAG3_FLICKER_LATCH = 0x08;
+// flags3 bit 4: the touchpad tap setting (VIA values 51-54).
+export const FLAG3_PAD_GESTURES = 0x10;
+// pad_gestures.c sval_pad_hold_ms: the hold times the board stores, the default (300) first.
+const PAD_HOLD_MS = [300, 20, 50, 100, 150, 200, 250, 350, 400, 500, 600, 700, 800, 1000, 1200, 1500];
 const MATRIX_COLS = 6;
 const HALF_ROWS = 5;
 // keyboards/svalboard/typing_pause.h: the lease after the owner's last packet,
@@ -116,6 +120,10 @@ export interface FakeFirmwareOptions {
      * timeout is VIA 49 (ms) and 50 (no timeout). Default true.
      */
     timingUsOnly?: boolean;
+    /** Firmware with the touchpad tap setting: VIA values 51-54, GET_INFO byte 20 bit 4. Default true. */
+    padGestures?: boolean;
+    /** An Azoteq touchpad on each half (0x2C, 0x18), instead of no pointing module. Default false. */
+    touchpad?: boolean;
 }
 
 /** A Sval table (TABLE_SCAN ids 0-4): its storage, entry size and "in use" test. */
@@ -187,6 +195,14 @@ export class FakeSvalFirmware {
     readonly flickerLatch: boolean;
     readonly debounceSwitch: boolean;
     readonly timingUsOnly: boolean;
+    readonly padGestures: boolean;
+    readonly touchpad: boolean;
+    /**
+     * The touchpad tap setting byte (pad_gestures.h): bit 0 tap off, bit 1
+     * two-finger tap off, bit 2 press and hold off, bits 3-6 the hold time
+     * index. 0 is the defaults. RAM here; the board stores it on save.
+     */
+    padSetting = 0;
     /** Every channel-0 custom value write ([id, bytes]), oldest first, for tests. */
     readonly customWrites: { id: number; value: number[] }[] = [];
     /**
@@ -228,6 +244,8 @@ export class FakeSvalFirmware {
         this.flickerLatch = options.flickerLatch ?? true;
         this.debounceSwitch = options.debounceSwitch ?? true;
         this.timingUsOnly = options.timingUsOnly ?? true;
+        this.padGestures = options.padGestures ?? true;
+        this.touchpad = options.touchpad ?? false;
         this.onChange = options.onChange;
         if (this.timingUsOnly) this.migrateTiming();
         this.factoryKeymap = options.factoryKeymap;
@@ -308,7 +326,7 @@ export class FakeSvalFirmware {
     }
 
     get featureFlags3(): number {
-        return (this.typingPause ? FLAG3_TYPING_PAUSE : 0) | (this.flickerLatch ? FLAG3_FLICKER_LATCH : 0);
+        return (this.typingPause ? FLAG3_TYPING_PAUSE : 0) | (this.flickerLatch ? FLAG3_FLICKER_LATCH : 0) | (this.padGestures ? FLAG3_PAD_GESTURES : 0);
     }
 
     private count(row: number, col: number) {
@@ -680,6 +698,10 @@ export class FakeSvalFirmware {
             }
             return;
         }
+        if (this.padGestures && valueId >= 51 && valueId <= 54) {
+            this.padValue(command, valueId, value);
+            return;
+        }
         if (command === 0x09 && this.debounceWrites.length) this.debounceWrites[this.debounceWrites.length - 1].saved = true;
         if (command === 0x07) this.customWrites.push({ id: valueId, value: Array.from(value.subarray(0, 2)) });
         if (this.timingUsOnly && this.timingValue(command, valueId, value)) return;
@@ -701,6 +723,33 @@ export class FakeSvalFirmware {
             if (CUSTOM_TWO_BYTE.has(valueId) || valueId === 31 || valueId >= 32) value[1] = c[valueId * 2 + 1];
         }
         // id_custom_save: write_eeprom_kb(); values are already stored here
+    }
+
+    /** VIA values 51-54 (svalboard.c, pad_gestures.c). */
+    private padValue(command: number, valueId: number, value: Uint8Array): void {
+        const bit = valueId === 51 ? 0x01 : valueId === 52 ? 0x02 : 0x04;
+        if (command === 0x07) {
+            this.customWrites.push({ id: valueId, value: Array.from(value.subarray(0, 2)) });
+            if (valueId === 54) {
+                const ms = value[0] | (value[1] << 8);
+                // Nearest; a tie takes the shorter (pad_gestures.c).
+                const i = PAD_HOLD_MS.reduce((best, h, j) => {
+                    const d = Math.abs(h - ms), b = Math.abs(PAD_HOLD_MS[best] - ms);
+                    return d < b || (d === b && h < PAD_HOLD_MS[best]) ? j : best;
+                }, 0);
+                this.padSetting = (this.padSetting & ~0x78) | (i << 3);
+            } else {
+                this.padSetting = value[0] ? this.padSetting & ~bit : this.padSetting | bit;
+            }
+        } else if (command === 0x08) {
+            if (valueId === 54) {
+                const ms = PAD_HOLD_MS[(this.padSetting >> 3) & 0x0f];
+                value[0] = ms & 0xff;
+                value[1] = ms >> 8;
+            } else {
+                value[0] = this.padSetting & bit ? 0 : 1;
+            }
+        }
     }
 
     /**
@@ -950,8 +999,14 @@ export class FakeSvalFirmware {
                         out[0] = 1; // format
                         // This half (the USB half: right), then the other (left).
                         // flags: reported | auto (the build drives whatever answers); built for none; none answered.
-                        out.set([0x01 | 0x08, 0, 3, 0, 0], 1);
-                        out.set([0x01 | 0x02 | 0x08, 0, 3, 0, 0], 6);
+                        if (this.touchpad) {
+                            // An Azoteq pad on each half (IQS550: product 40).
+                            out.set([0x01 | 0x04 | 0x08, 5, 5, 0, 40], 1);
+                            out.set([0x01 | 0x02 | 0x04 | 0x08, 5, 5, 0, 40], 6);
+                        } else {
+                            out.set([0x01 | 0x08, 0, 3, 0, 0], 1);
+                            out.set([0x01 | 0x02 | 0x08, 0, 3, 0, 0], 6);
+                        }
                     }
                 }
                 break;
@@ -962,7 +1017,7 @@ export class FakeSvalFirmware {
             case 0x18: { // FRAGMENT_GET_HARDWARE: [count][21 ids]
                 data[2] = FRAGMENT_INSTANCE_COUNT;
                 for (let i = 0; i < FRAGMENT_MAX_INSTANCES; i++) {
-                    data[3 + i] = POINTING_FRAGMENT_INSTANCES.includes(i) ? POINTING_NONE_FRAGMENT_ID : 0xff;
+                    data[3 + i] = POINTING_FRAGMENT_INSTANCES.includes(i) ? (this.touchpad ? POINTING_AZOTEQ_FRAGMENT_ID : POINTING_NONE_FRAGMENT_ID) : 0xff;
                 }
                 break;
             }
