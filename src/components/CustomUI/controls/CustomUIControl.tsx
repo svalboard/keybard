@@ -88,6 +88,20 @@ export const CustomUIControl: React.FC<CustomUIControlProps> = ({
                 />
             );
 
+        case 'link':
+            // App-provided: opens another view (onButtonClick gets the action), writes nothing.
+            return (
+                <div className={compact ? "py-0.5" : "px-3 py-2 panel-layer-item"}>
+                    <button
+                        type="button"
+                        onClick={handleButtonClick}
+                        className={(compact ? "text-xs " : "text-sm ") + "font-medium text-kb-ink underline underline-offset-2 hover:text-kb-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"}
+                    >
+                        {item.label}
+                    </button>
+                </div>
+            );
+
         case 'color':
             // TODO: Implement color picker control
             return (

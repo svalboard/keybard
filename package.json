@@ -30,6 +30,7 @@
         "test:e2e:import-settings": "python tests/e2e/import_settings_e2e.py",
         "test:e2e:leader-timeout": "python tests/e2e/leader_timeout_e2e.py",
         "test:e2e:touchpad-taps": "python tests/e2e/touchpad_taps_e2e.py",
+        "test:e2e:touchpad-tuning": "python tests/e2e/touchpad_tuning_e2e.py",
         "build:sval-preview": "tsc && vite build --mode sval-preview",
         "build:svalboard": "tsc && vite build --mode svalboard",
         "build:next": "tsc && vite build --mode next",

@@ -1,4 +1,5 @@
 import { withTouchpadTaps } from "@/utils/touchpad-taps";
+import { hasPadTouch as hasPadTouchFlag, PAD_TOUCH_PAGE, parsePadTouch, type PadTouchReport } from "@/utils/touchpad-tuning";
 import { LabelService } from "./label.service";
 import { KleService } from "./kle.service";
 import { keyService } from "./key.service";
@@ -613,6 +614,28 @@ export class KeyboardService {
             const report = parsePointingMotion(reply, SvilUSB.CMD_SVIL_POINTING_MOTION);
             if (!report || !this.hasPointingContacts(kbinfo)) return report;
             return withPadContacts(report, await this.getPointingContacts(kbinfo));
+        } catch {
+            return null;
+        }
+    }
+
+    /** Whether the board answers the touch page of POINTING_MOTION (0x2D page 1). */
+    hasPadTouch(kbinfo: KeyboardInfo | null | undefined): boolean {
+        return hasPadTouchFlag(kbinfo?.feature_flags3);
+    }
+
+    /**
+     * Each pad's touch as the chip's tap and press-and-hold rules see it (the
+     * touch page of POINTING_MOTION: DF 2D <reader> 01; a read that clears only
+     * its own events, never the motion counts). Null without sending on
+     * firmware that doesn't advertise it, and null on a failed or empty read.
+     */
+    async getPadTouch(kbinfo: KeyboardInfo): Promise<PadTouchReport | null> {
+        if (!this.hasPadTouch(kbinfo)) return null;
+        const perReader = ((kbinfo.feature_flags2 ?? 0) & SVIL_FLAG2_POINTING_MOTION_READERS) !== 0;
+        try {
+            const reply = await this.usb.sendSvil(SvilUSB.CMD_SVIL_POINTING_MOTION, [perReader ? KEYBARD_MOTION_READER : 0, PAD_TOUCH_PAGE], { uint8: true }) as Uint8Array;
+            return parsePadTouch(reply, SvilUSB.CMD_SVIL_POINTING_MOTION);
         } catch {
             return null;
         }

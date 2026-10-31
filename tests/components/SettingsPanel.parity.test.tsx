@@ -2,7 +2,10 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPanel from '../../src/layout/SecondarySidebar/Panels/SettingsPanel';
 import { SETTINGS } from '../../src/contexts/SettingsContext';
-import { SETTINGS_PAGE, sectionStateSetting } from '../../src/layout/SecondarySidebar/Panels/settings/layout';
+import { CONDITIONAL_SECTIONS, SETTINGS_PAGE as DECLARED, sectionStateSetting } from '../../src/layout/SecondarySidebar/Panels/settings/layout';
+
+// These boards have no touchpad: Touchpad tuning isn't on their page.
+const SETTINGS_PAGE = DECLARED.filter((s) => !(CONDITIONAL_SECTIONS as readonly string[]).includes(s.id));
 import { requestSettingsSection } from '../../src/layout/SecondarySidebar/Panels/settings/anchor';
 
 const state = vi.hoisted(() => ({

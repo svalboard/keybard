@@ -177,7 +177,8 @@ describe('Hardware and Typing behavior in search', () => {
 
     it('finds each in its own card only', () => {
         const page = SETTINGS_PAGE;
-        expect([...searchSettings(page, 'touchpad', lookup)!.keys()]).toEqual(['hardware']);
+        expect([...searchSettings(page, 'touchpad', lookup)!.keys()]).toEqual(['hardware', 'touchpad']);
+        expect([...searchSettings(page, 'dead zone', lookup)!.keys()]).toEqual(['touchpad']);
         expect([...searchSettings(page, 'tapping term', lookup)!.keys()]).toEqual(['typing']);
     });
 });

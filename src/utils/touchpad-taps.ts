@@ -9,6 +9,7 @@
 // Pointing Device menu when the flag is set, and shows them only while a half
 // has a touchpad.
 import type { CustomUIMenuItem, KeyboardInfo } from "@/types/keyboard.types";
+import { hasPadTuning, PAD_DEAD_ZONE_KEY, PAD_SCROLL_KEY, PAD_TAP_MS_KEY, TUNE_TOUCHPAD_ACTION, TUNE_TOUCHPAD_LABEL } from "./touchpad-tuning";
 
 /** GET_INFO byte 20 (feature_flags3) bit 4: VIA values 51-54. */
 export const SVIL_FLAG3_PAD_GESTURES = 0x10;
@@ -45,8 +46,22 @@ function refs(items: CustomUIMenuItem[], out: { key: string; channel: number }[]
     return out;
 }
 
+/**
+ * The touchpad tuning values (VIA 55-57), in the menu so they load at connect.
+ * Pointing Devices doesn't show them (TUNING_HIDDEN_KEYS); the tuning view in
+ * Settings does, with the link to it in their place.
+ */
+export function touchpadTuningItems(channel: number): CustomUIMenuItem[] {
+    return [
+        { label: TUNE_TOUCHPAD_LABEL, type: "link", content: [TUNE_TOUCHPAD_ACTION] },
+        { label: "Dead Zone (0.01 mm)", type: "range", options: [20, 400, 10], content: [PAD_DEAD_ZONE_KEY, channel, 55] },
+        { label: "Tap Time (ms)", type: "range", options: [50, 1000, 25], content: [PAD_TAP_MS_KEY, channel, 56] },
+        { label: "Scroll Start (0.01 mm)", type: "range", options: [0, 1000, 5], content: [PAD_SCROLL_KEY, channel, 57] },
+    ];
+}
+
 /** The Touchpad section, on the channel the menu's own values use. */
-export function touchpadSection(channel: number): CustomUIMenuItem {
+export function touchpadSection(channel: number, featureFlags3?: number | null): CustomUIMenuItem {
     return {
         label: TOUCHPAD_SECTION_LABEL,
         note: TOUCHPAD_NOTE,
@@ -56,6 +71,7 @@ export function touchpadSection(channel: number): CustomUIMenuItem {
             { label: "Press and Hold to Drag", type: "toggle", content: [PAD_HOLD_KEY, channel, 53] },
             // Grayed out, not hidden, while press and hold is off: it keeps its time.
             { label: "Hold Time (ms)", type: "range", options: [20, 1500, 10], disabledIf: `{${PAD_HOLD_KEY}} == 0`, content: [PAD_HOLD_MS_KEY, channel, 54] },
+            ...(hasPadTuning(featureFlags3) ? touchpadTuningItems(channel) : []),
         ],
     };
 }
@@ -77,7 +93,7 @@ export function withTouchpadTaps(menus: CustomUIMenuItem[], featureFlags3: numbe
     // After the pointers and auto mouse, before Scroll Settings and Advanced.
     const at = content.findIndex(item => item.label === "Scroll Settings" || item.label === "Advanced");
     const next = [...content];
-    next.splice(at < 0 ? next.length : at, 0, touchpadSection(channel));
+    next.splice(at < 0 ? next.length : at, 0, touchpadSection(channel, featureFlags3));
     const out = [...menus];
     out[index] = { ...menu, content: next };
     return out;

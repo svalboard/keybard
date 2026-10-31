@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SETTINGS } from '../../src/contexts/SettingsContext';
-import { HARDWARE_OPEN_SETTING, SETTINGS_PAGE, SETTINGS_SHOWN_ELSEWHERE, blocksOnPage, sectionStateSetting, settingsOnPage } from '../../src/layout/SecondarySidebar/Panels/settings/layout';
+import { HARDWARE_OPEN_SETTING, SETTINGS_PAGE, SETTINGS_SHOWN_ELSEWHERE, blocksOnPage, sectionStateSetting, settingsOnPage, CONDITIONAL_SECTIONS } from '../../src/layout/SecondarySidebar/Panels/settings/layout';
 
 describe('Settings page declaration', () => {
     const onPage = settingsOnPage();
@@ -33,9 +33,9 @@ describe('Settings page declaration', () => {
         }
     });
 
-    it('is six cards, each with a chip, a summary and a sentence-case title', () => {
-        expect(SETTINGS_PAGE.map((s) => s.title)).toEqual(['Hardware', 'Firmware', 'Backups', 'Appearance and editing', 'Typing behavior', 'About']);
-        expect(SETTINGS_PAGE.map((s) => s.chip)).toEqual(['Hardware', 'Firmware', 'Backups', 'Appearance', 'Typing', 'About']);
+    it('is seven cards, each with a chip, a summary and a sentence-case title', () => {
+        expect(SETTINGS_PAGE.map((s) => s.title)).toEqual(['Hardware', 'Touchpad tuning', 'Firmware', 'Backups', 'Appearance and editing', 'Typing behavior', 'About']);
+        expect(SETTINGS_PAGE.map((s) => s.chip)).toEqual(['Hardware', 'Touchpad', 'Firmware', 'Backups', 'Appearance', 'Typing', 'About']);
         for (const s of SETTINGS_PAGE) {
             expect(s.summary, s.id).not.toBe('');
             expect(s.title.slice(1), s.title).toBe(s.title.slice(1).toLowerCase());
@@ -49,11 +49,17 @@ describe('Settings page declaration', () => {
     });
 
     it('holds Hardware, Typing behavior and every block once', () => {
-        expect([...blocksOnPage()].sort()).toEqual(['about', 'backups', 'board', 'firmware', 'hardware', 'typing']);
+        expect([...blocksOnPage()].sort()).toEqual(['about', 'backups', 'board', 'firmware', 'hardware', 'touchpad', 'typing']);
     });
 
-    it('opens only Hardware on a first visit', () => {
-        expect(SETTINGS_PAGE.filter((s) => s.defaultOpen).map((s) => s.id)).toEqual(['hardware']);
+    it('shows Touchpad tuning only on some boards, beside Hardware', () => {
+        expect([...CONDITIONAL_SECTIONS]).toEqual(['touchpad']);
+        expect(SETTINGS_PAGE.findIndex((s) => s.id === 'touchpad')).toBe(SETTINGS_PAGE.findIndex((s) => s.id === 'hardware') + 1);
+        expect(SETTINGS_PAGE.find((s) => s.id === 'touchpad')!.rows).toEqual([{ block: 'touchpad' }]);
+    });
+
+    it('opens only Hardware, and the one-line Touchpad tuning entry, on a first visit', () => {
+        expect(SETTINGS_PAGE.filter((s) => s.defaultOpen).map((s) => s.id)).toEqual(['hardware', 'touchpad']);
     });
 
     it('remembers each card under its own setting, Hardware under the one it already used', () => {

@@ -13,6 +13,10 @@ import {
     LABEL_SIZE, LABEL_TYPE_COMBO, LAYERS, LEADER_SIZE, MACRO_BUFFER_SIZE, MACRO_BUFFER_SIZE_NO_COMBO_LABELS,
     MACRO_COUNT, ROWS, TABLE_ENTRIES, TAP_DANCE_SIZE, type FakeBoardState,
 } from "./board";
+import {
+    ChipModel, nearest, packPadTouch, PAD_DEAD_ZONE_MM100, PAD_HEIGHT_MM100, PAD_SCROLL_MM100, PAD_TAP_MS, PAD_WIDTH_MM100, type ChipSettings,
+} from "@/utils/touchpad-tuning";
+import { SCRIPT_MS, scriptSample } from "./touch-script";
 import { DEFINITION_BYTES, FRAGMENT_INSTANCE_COUNT, POINTING_AZOTEQ_FRAGMENT_ID, POINTING_FRAGMENT_INSTANCES, POINTING_NONE_FRAGMENT_ID } from "./definition";
 
 // ---- client wrapper (client_wrapper.c / .h) --------------------------------
@@ -48,7 +52,12 @@ export const FLAG3_TYPING_PAUSE = 0x04;
 export const FLAG3_FLICKER_LATCH = 0x08;
 // flags3 bit 4: the touchpad tap setting (VIA values 51-54).
 export const FLAG3_PAD_GESTURES = 0x10;
+// flags3 bits 5 and 6: the touchpad tuning (VIA 55-57) and the touch page of 0x2D.
+export const FLAG3_PAD_TUNING = 0x20;
+export const FLAG3_PAD_TOUCH = 0x40;
 // pad_gestures.c sval_pad_hold_ms: the hold times the board stores, the default (300) first.
+/** The build's own scroll distance on the native touchpad (50 pixels at 2048 across 43 mm). */
+const FAKE_SCROLL_BUILD_MM100 = 105;
 const PAD_HOLD_MS = [300, 20, 50, 100, 150, 200, 250, 350, 400, 500, 600, 700, 800, 1000, 1200, 1500];
 const MATRIX_COLS = 6;
 const HALF_ROWS = 5;
@@ -203,6 +212,12 @@ export class FakeSvalFirmware {
      * index. 0 is the defaults. RAM here; the board stores it on save.
      */
     padSetting = 0;
+    /** The touchpad tuning (pad_gestures.h): dead zone 0.01 mm, tap time ms, scroll start 0.01 mm (0: the build's own). */
+    padTuning = { deadZone: PAD_DEAD_ZONE_MM100[0] as number, tapMs: PAD_TAP_MS[0] as number, scroll: 0 };
+    /** Each pad plays TOUCH_SCRIPT through the chip model, the right pad half a loop behind the left. */
+    private padPlayers: { model: ChipModel; fedTo: number; offset: number }[] | null = null;
+    /** Plays the scripted touches this many times faster (tests that need many touches). */
+    touchSpeed = 1;
     /** Every channel-0 custom value write ([id, bytes]), oldest first, for tests. */
     readonly customWrites: { id: number; value: number[] }[] = [];
     /**
@@ -326,7 +341,8 @@ export class FakeSvalFirmware {
     }
 
     get featureFlags3(): number {
-        return (this.typingPause ? FLAG3_TYPING_PAUSE : 0) | (this.flickerLatch ? FLAG3_FLICKER_LATCH : 0) | (this.padGestures ? FLAG3_PAD_GESTURES : 0);
+        return (this.typingPause ? FLAG3_TYPING_PAUSE : 0) | (this.flickerLatch ? FLAG3_FLICKER_LATCH : 0) | (this.padGestures ? FLAG3_PAD_GESTURES : 0)
+            | (this.padGestures && this.touchpad ? FLAG3_PAD_TUNING | FLAG3_PAD_TOUCH : 0);
     }
 
     private count(row: number, col: number) {
@@ -698,6 +714,10 @@ export class FakeSvalFirmware {
             }
             return;
         }
+        if (this.padGestures && this.touchpad && valueId >= 55 && valueId <= 57) {
+            this.padTuningValue(command, valueId, value);
+            return;
+        }
         if (this.padGestures && valueId >= 51 && valueId <= 54) {
             this.padValue(command, valueId, value);
             return;
@@ -723,6 +743,53 @@ export class FakeSvalFirmware {
             if (CUSTOM_TWO_BYTE.has(valueId) || valueId === 31 || valueId >= 32) value[1] = c[valueId * 2 + 1];
         }
         // id_custom_save: write_eeprom_kb(); values are already stored here
+    }
+
+    /** VIA values 55-57 (svalboard.c, pad_gestures.c): each write takes the nearest stored value. */
+    private padTuningValue(command: number, valueId: number, value: Uint8Array): void {
+        const t = this.padTuning;
+        if (command === 0x07) {
+            this.customWrites.push({ id: valueId, value: Array.from(value.subarray(0, 2)) });
+            const v = value[0] | (value[1] << 8);
+            if (valueId === 55) t.deadZone = nearest(PAD_DEAD_ZONE_MM100, v);
+            else if (valueId === 56) t.tapMs = nearest(PAD_TAP_MS, v);
+            else t.scroll = v === 0 || v === FAKE_SCROLL_BUILD_MM100 ? 0 : nearest(PAD_SCROLL_MM100.slice(1), v);
+        } else if (command === 0x08) {
+            const v = valueId === 55 ? t.deadZone : valueId === 56 ? t.tapMs : t.scroll || FAKE_SCROLL_BUILD_MM100;
+            value[0] = v & 0xff;
+            value[1] = v >> 8;
+        }
+    }
+
+    private chipSettings(): ChipSettings {
+        const s = this.padSetting;
+        return {
+            deadZone: this.padTuning.deadZone, tapMs: this.padTuning.tapMs, holdMs: PAD_HOLD_MS[(s >> 3) & 0x0f],
+            tapOn: (s & 1) === 0, twoFingerOn: (s & 2) === 0, holdOn: (s & 4) === 0,
+        };
+    }
+
+    /** The touch page of 0x2D (docs/protocol.md "Touchpad touch"), from the scripted touches. */
+    private touchPage(out: Uint8Array): void {
+        const now = this.now() * this.touchSpeed;
+        if (!this.padPlayers) {
+            this.padPlayers = [0, SCRIPT_MS / 2].map((offset) => ({ model: new ChipModel(() => this.chipSettings()), fedTo: now, offset }));
+        }
+        const blocks = this.padPlayers.map((p) => {
+            // Feed every 10 ms sample since the last read (at most one loop's worth).
+            for (let t = Math.max(p.fedTo, now - SCRIPT_MS); t <= now; t += 10) {
+                const loop = (t + p.offset) % SCRIPT_MS;
+                p.model.sample({ ...scriptSample(loop), t });
+            }
+            p.fedTo = now + 10;
+            return p.model.read(now);
+        });
+        const c = this.chipSettings();
+        out.set(packPadTouch({
+            tapOn: c.tapOn, twoFingerOn: c.twoFingerOn, holdOn: c.holdOn, elapsedMs: 0,
+            deadZone: c.deadZone, tapMs: c.tapMs, holdMs: c.holdMs, width: PAD_WIDTH_MM100, height: PAD_HEIGHT_MM100, channelsX: 8, channelsY: 7,
+            scrollStart: this.padTuning.scroll || FAKE_SCROLL_BUILD_MM100, left: blocks[0], right: blocks[1],
+        }));
     }
 
     /** VIA values 51-54 (svalboard.c, pad_gestures.c). */
@@ -1010,7 +1077,12 @@ export class FakeSvalFirmware {
                     }
                 }
                 break;
-            case 0x2d: // POINTING_MOTION: format 0, no data
+            case 0x2d: { // POINTING_MOTION: format 0, no data; page 1 (DF 2D <reader> 01) is the touch page
+                const page = length > 3 ? data[3] : 0;
+                if (length > 2) data.subarray(2, length).fill(0);
+                if (page === 1 && this.padGestures && this.touchpad && length >= 2 + 56) this.touchPage(data.subarray(2, length));
+                break;
+            }
             case 0x2f: // POINTING_CONTACTS (not advertised): format 0
                 if (length > 2) data.subarray(2, length).fill(0);
                 break;

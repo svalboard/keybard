@@ -24,7 +24,9 @@
  *   with ?panel=settings and the old panel names); ?panel=pointing opens the
  *   Pointing Devices panel, where the auto mouse settings are; ?panel=keyboard opens
  *   Standard Keys. ?panel=firmware and
- *   ?panel=backups open Settings at that card.
+ *   ?panel=backups open Settings at that card. ?panel=settings&tune=touchpad
+ *   opens Settings with the Touchpad tuning dialog open, and
+ *   ?panel=pointing&tune=touchpad Pointing Devices with it open.
  */
 import type { ResolvedTheme } from "@/lib/theme";
 
@@ -184,4 +186,9 @@ export function resetDeepLinksForTests() {
     editStarted = false;
     fakeBoardStarted = false;
     testerStarted = false;
+}
+
+/** ?tune=touchpad: open the Touchpad tuning dialog (with ?panel=settings or ?panel=pointing). */
+export function tuneFromSearch(search: string): boolean {
+    return param(search, "tune")?.trim().toLowerCase() === "touchpad";
 }

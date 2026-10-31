@@ -382,7 +382,7 @@ export interface FragmentState {
 /**
  * Control types supported by VIA3 Custom UI
  */
-export type CustomUIControlType = 'toggle' | 'range' | 'dropdown' | 'color' | 'keycode' | 'button';
+export type CustomUIControlType = 'toggle' | 'range' | 'dropdown' | 'color' | 'keycode' | 'button' | 'link'; // link: app-provided, opens another view
 
 /**
  * Custom UI menu item - can be a section (with nested content) or a control (leaf)

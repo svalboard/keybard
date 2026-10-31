@@ -1,15 +1,18 @@
 import { selectPointingMenu, type PointingMenuSection } from "@/utils/pointing-menu";
-import { readBackKeys, timingWrites, withEffectiveTiming } from "@/utils/scan-timing";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { withEffectiveTiming } from "@/utils/scan-timing";
+import { useCallback, useMemo } from "react";
 import { CustomUIRenderer } from "@/components/CustomUI";
-import { customValueService } from "@/services/custom-value.service";
-import { useChanges } from "@/contexts/ChangesContext";
 import { useKeyboard } from "@/contexts/KeyboardContext";
+import { useMenuValues } from "@/hooks/useMenuValues";
+import { openTouchpadTuning } from "@/components/touchpad-tuning/tuning-open";
 import type { CustomUIMenuItem } from "@/types/keyboard.types";
 import { boardHasTouchpad, PAD_KEYS } from "@/utils/touchpad-taps";
+import { PAD_TUNING_KEYS, TUNE_TOUCHPAD_ACTION } from "@/utils/touchpad-tuning";
 
-const NO_KEYS: ReadonlySet<string> = new Set();
-const PAD_KEY_SET: ReadonlySet<string> = new Set(PAD_KEYS);
+// The tuning values are shown in Settings, never here; on a board without a
+// touchpad, nothing of the Touchpad section shows.
+const TUNING_HIDDEN: ReadonlySet<string> = new Set(PAD_TUNING_KEYS);
+const PAD_HIDDEN: ReadonlySet<string> = new Set([...PAD_KEYS, ...PAD_TUNING_KEYS, TUNE_TOUCHPAD_ACTION]);
 
 interface DynamicMenuPanelProps {
     menuIndex: number;
@@ -27,99 +30,21 @@ interface DynamicMenuPanelProps {
  * On value change, updates both the keyboard and kbinfo.custom_values.
  */
 const DynamicMenuPanel: React.FC<DynamicMenuPanelProps> = ({ menuIndex, horizontal = false, embedded = false, section = "all" }) => {
-    const { keyboard, setKeyboard, isConnected } = useKeyboard();
-    const { queue } = useChanges();
-    const [values, setValues] = useState<Map<string, number>>(new Map());
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const { keyboard, isConnected } = useKeyboard();
 
     // Get the menu for this panel
     const menu = keyboard?.menus?.[menuIndex];
-    // The touchpad taps show only while a half has a touchpad.
+    // The touchpad taps show only while a half has a touchpad. The tuning
+    // values live in Settings (Touchpad tuning); here a link opens them.
     const hasTouchpad = boardHasTouchpad(keyboard);
     const displayItems = useMemo(() => selectPointingMenu(
-        (menu?.content ?? []) as CustomUIMenuItem[], section, hasTouchpad ? NO_KEYS : PAD_KEY_SET,
+        (menu?.content ?? []) as CustomUIMenuItem[], section, hasTouchpad ? TUNING_HIDDEN : PAD_HIDDEN,
     ), [menu, section, hasTouchpad]);
-
-    // Load values when panel opens or keyboard connects
-    useEffect(() => {
-        if (!menu) {
-            setLoading(false);
-            return;
-        }
-
-        const loadValues = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                // First: seed from kbinfo.custom_values (instant, no USB)
-                if (keyboard?.custom_values) {
-                    customValueService.populateCacheFromEntries(keyboard.custom_values);
-                }
-
-                setValues(customValueService.getCache());
-            } catch (err) {
-                console.error("Failed to load custom values:", err);
-                setError("Failed to load settings from keyboard");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        loadValues();
-    }, [menu, isConnected, keyboard?.custom_values]);
-
-    // Draft and device writes share the same queue; persistence completes before
-    // the queue acknowledges success. Reopening the panel preserves manual drafts.
-    // Writes key (and, for a scan wait on older firmware, the other wait it
-    // would otherwise leave on the preset), saves, then reads back what the
-    // board stored for the values it may have changed (clamped, rounded, or
-    // set together) so every view shows the board's own values.
-    const handleValueChange = useCallback(async (key: string, value: number) => {
-        if (!menu || !isConnected || !keyboard) return;
-        const refs = customValueService.extractAllItemsWithRefs([menu]);
-        const find = (k: string) => refs.find(({ ref }) => ref.key === k);
-        const found = find(key);
-        if (!found) { setError(`Unknown setting: ${key}`); return; }
-        const writes = timingWrites(key, value, customValueService.getCache()).filter(([k]) => find(k));
-        const store = (pairs: [string, number][]) => {
-            setValues(prev => {
-                const next = new Map(prev);
-                for (const [k, v] of pairs) next.set(k, v);
-                return next;
-            });
-            setKeyboard(current => {
-                if (!current) return current;
-                const entries = [...(current.custom_values ?? [])];
-                for (const [k, v] of pairs) {
-                    const f = find(k);
-                    if (!f) continue;
-                    const index = entries.findIndex(entry => entry.key === k);
-                    const entry = { key: k, channel: f.ref.channel, valueId: f.ref.valueId, data: customValueService.intToBytes(v, customValueService.getByteWidth(f.item)) };
-                    if (index >= 0) entries[index] = { ...entries[index], ...entry };
-                    else entries.push(entry);
-                }
-                return { ...current, custom_values: entries };
-            });
-        };
-        store(writes);
-        await queue(`Setting ${key}`, async () => {
-            for (const [k, v] of writes) await customValueService.setValue(k, v, [menu]);
-            await customValueService.save(found.ref.channel);
-            const back: [string, number][] = [];
-            for (const k of readBackKeys(key)) {
-                const f = find(k);
-                if (!f) continue;
-                const v = await customValueService.get(f.ref.channel, f.ref.valueId, customValueService.getByteWidth(f.item));
-                customValueService.setCached(k, v);
-                back.push([k, v]);
-            }
-            if (back.length) store(back);
-        }, { type: "custom_ui", writeKey: `custom:${key}` });
-    }, [menu, isConnected, queue, keyboard, setKeyboard]);
+    const { values, setValue: handleValueChange, loading, error } = useMenuValues(menu);
     const shownValues = useMemo(() => withEffectiveTiming(values), [values]);
 
     const handleButtonClick = useCallback(async (key: string) => {
+        if (key === TUNE_TOUCHPAD_ACTION) { openTouchpadTuning(); return; }
         await handleValueChange(key, 1);
     }, [handleValueChange]);
 
