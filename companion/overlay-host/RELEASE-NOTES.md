@@ -4,16 +4,16 @@ Keybard Overlay shows your Svalboard layout as a transparent overlay on your des
 
 This release is a portable ZIP for 64-bit Windows 10 and 11, not a signed installer, and a test build for Linux.
 
-## New in x4.3.4
+## New in v4.3.4
 
-This prerelease bundles the Keybard that next.keybard.svalboard.com runs, and goes with Svalboard firmware x4.3.4. What changes for you since v4.3.3:
+This release bundles the Keybard that keybard.svalboard.com now runs, and goes with Svalboard firmware v4.3.4. What changes for you since v4.3.3:
 
 - **Touchpad clicks no longer get stuck.** On Macs and other computers that use the touchpad as a mouse, a tap or press and hold could leave a button held down. The button now always lets go.
 - **Touchpad switches.** Tap to click, two-finger tap and press and hold each have their own switch. Press and hold starts after 300 ms by default.
 - **Tune your touchpad.** A new touchpad tuning tool, opened from Settings or Pointing Devices, shows each pad live as you touch it and sets the dead zone, tap time, hold time and scroll start. The dead zone is now the same physical size on every build: 1.2 mm by default.
 - **Mouse key wheel settings work.** The wheel delay and interval now change how the wheel keys repeat.
 - **Settings stay in range.** A setting can no longer wrap around to a broken value: a value past its limit, typed in or stored before, is held at the limit.
-- **Update the firmware from Keybard.** A keyboard that runs x4 or later can update to x4.3.4 from Keybard.
+- **Update the firmware from Keybard.** A keyboard that runs x4 or later can update to v4.3.4 from Keybard.
 
 ## New in v4.3.3
 
