@@ -17,6 +17,7 @@ import { COMBO_TERM_QSID, ZERO_REPLACED_SETTINGS, effectiveSetting, parseSetting
 import { keyboardService } from "@/services/keyboard.service";
 import { hoverBackgroundClasses, hoverBorderClasses, hoverHeaderClasses } from "@/utils/colors";
 import { getKeyContents } from "@/utils/keys";
+import { getKeyDisplayLabel } from "@/utils/key-display";
 import { Key } from "@/components/Key";
 import { KeyContent, ComboOptions } from "@/types/keyboard.types";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,7 @@ const CombosPanel: React.FC = () => {
     const persistBinding = useBindingChanges();
     const { assignKeycode } = useKeyBinding();
     const { selectedLayer } = useLayer();
-    const { layoutMode } = useLayoutSettings();
+    const { layoutMode, internationalLayout } = useLayoutSettings();
     const {
         setItemToEdit,
         setBindingTypeToEdit,
@@ -170,25 +171,15 @@ const CombosPanel: React.FC = () => {
     };
 
     // Shared small key renderer
-    const renderSmallKey = (content: KeyContent, idx: number, comboIndex: number, slot: number) => {
+    const renderSmallKey = (keycode: string, content: KeyContent, idx: number, comboIndex: number, slot: number) => {
         const hasContent = isKeyAssigned(content);
-        const label = (() => {
-            const str = content?.str;
-            if (!str) return "";
-            const parts = str.split('\n');
-            if (parts.length === 1) return parts[0];
-            const keycode = content?.top || "";
-            if (content?.type === 'modmask' && (keycode.includes("S(") || keycode.includes("LSFT") || keycode.includes("RSFT"))) {
-                return parts[0];
-            }
-            return parts[parts.length - 1];
-        })();
+        const label = getKeyDisplayLabel(keycode, content, internationalLayout);
         return (
             <div key={idx} className="relative w-[30px] h-[30px]">
                 <Key
                     isRelative
                     x={0} y={0} w={1} h={1} row={-1} col={-1}
-                    keycode={content?.top || "KC_NO"}
+                    keycode={keycode || "KC_NO"}
                     label={label}
                     keyContents={content}
                     layerColor={hasContent ? "sidebar" : undefined}
@@ -210,12 +201,13 @@ const CombosPanel: React.FC = () => {
                     const combo = comboEntry as any as import("@/types/keyboard.types").ComboEntry;
 
                     const inputs = [0, 1, 2, 3].map(idx => ({
-                        content: getKeyContents(keyboard, combo.keys[idx] || "KC_NO") as KeyContent,
+                        keycode: combo.keys?.[idx] || "KC_NO",
+                        content: getKeyContents(keyboard, combo.keys?.[idx] || "KC_NO") as KeyContent,
                         id: idx
                     })).filter(k => isKeyAssigned(k.content));
 
-                    const resultKeycode = combo.output;
-                    const result = getKeyContents(keyboard, resultKeycode || "KC_NO") as KeyContent;
+                    const resultKeycode = combo.output || "KC_NO";
+                    const result = getKeyContents(keyboard, resultKeycode) as KeyContent;
                     const hasAssignment = inputs.length > 0 || isKeyAssigned(result);
 
                     if (!hasAssignment) return null;
@@ -249,11 +241,11 @@ const CombosPanel: React.FC = () => {
                                 {inputs.map((input, idx) => (
                                     <React.Fragment key={input.id}>
                                         {idx > 0 && <Plus className="w-2 h-2 text-gray-400 dark:text-neutral-400" />}
-                                        {renderSmallKey(input.content, input.id, i, input.id)}
+                                        {renderSmallKey(input.keycode, input.content, input.id, i, input.id)}
                                     </React.Fragment>
                                 ))}
                                 <ArrowRightFromLine className="w-3 h-3 text-gray-400 dark:text-neutral-400 mx-1" />
-                                {renderSmallKey(result, 4, i, 4)}
+                                {renderSmallKey(resultKeycode, result, 4, i, 4)}
                             </div>
                         </div>
                     );
@@ -314,12 +306,13 @@ const CombosPanel: React.FC = () => {
                     const combo = comboEntry as any as import("@/types/keyboard.types").ComboEntry;
 
                     const inputs = [0, 1, 2, 3].map(idx => ({
-                        content: getKeyContents(keyboard, combo.keys[idx] || "KC_NO") as KeyContent,
+                        keycode: combo.keys?.[idx] || "KC_NO",
+                        content: getKeyContents(keyboard, combo.keys?.[idx] || "KC_NO") as KeyContent,
                         id: idx
                     })).filter(k => isKeyAssigned(k.content));
 
-                    const resultKeycode = combo.output;
-                    const result = getKeyContents(keyboard, resultKeycode || "KC_NO") as KeyContent;
+                    const resultKeycode = combo.output || "KC_NO";
+                    const result = getKeyContents(keyboard, resultKeycode) as KeyContent;
                     const hasAssignment = inputs.length > 0 || isKeyAssigned(result);
 
                     const enabled = isEnabled(combo.options);
@@ -330,11 +323,11 @@ const CombosPanel: React.FC = () => {
                             {inputs.map((input, idx) => (
                                 <React.Fragment key={input.id}>
                                     {idx > 0 && <Plus className="w-3 h-3 text-kb-ink" />}
-                                    {renderSmallKey(input.content, input.id, i, input.id)}
+                                    {renderSmallKey(input.keycode, input.content, input.id, i, input.id)}
                                 </React.Fragment>
                             ))}
                             <ArrowRightFromLine className="w-3 h-3 text-kb-ink mx-1" />
-                            {renderSmallKey(result, 4, i, 4)}
+                            {renderSmallKey(resultKeycode, result, 4, i, 4)}
                             <OnOffToggle
                                 value={enabled}
                                 onToggle={() => handleToggleEnabled(i)}
