@@ -18,7 +18,9 @@
  *   ?fakeBoard=touchpad is this firmware with an Azoteq touchpad on each half,
  *   in touchpad mode as Windows and Linux have it (?fakeBoard=touchpad-os too);
  *   ?fakeBoard=touchpad-gestures the same board on built-in gestures, as on a
- *   Mac (the computer never asks for touchpad mode).
+ *   Mac (the computer never asks for touchpad mode); ?fakeBoard=touchpad-434
+ *   v4.3.4's firmware in touchpad mode (the touch page only: no fingers page,
+ *   palm rejection or touchpad mode setting).
  *   ?fakeBoard=leader0 is firmware from before x4.3.3 whose settings reset
  *   stored a leader timeout of 0 (fresh on every load).
  *   Its settings stay in this browser across reloads (except turbo6 and leader0).
@@ -66,14 +68,14 @@ export function themeFromSearch(search: string): ResolvedTheme | null {
  * "combo-names": this firmware (combo names, typing pause); "old": firmware
  * without combo names; "no-pause": firmware that can't pause typing.
  */
-export type FakeBoardChoice = "combo-names" | "old" | "no-pause" | "turbo6" | "leader0" | "touchpad" | "touchpad-gestures";
+export type FakeBoardChoice = "combo-names" | "old" | "no-pause" | "turbo6" | "leader0" | "touchpad" | "touchpad-gestures" | "touchpad-434";
 
 /** ?fakeBoard (any value but "old" or "nopause") is the simulated board with combo names; absent is null. */
 export function fakeBoardFromSearch(search: string): FakeBoardChoice | null {
     const value = param(search, FAKE_BOARD_PARAM);
     if (value === null) return null;
     const v = value.trim().toLowerCase();
-    return v === "old" ? "old" : v === "nopause" || v === "no-pause" ? "no-pause" : v === "turbo6" ? "turbo6" : v === "leader0" ? "leader0" : v === "touchpad" || v === "touchpad-os" ? "touchpad" : v === "touchpad-gestures" ? "touchpad-gestures" : "combo-names";
+    return v === "old" ? "old" : v === "nopause" || v === "no-pause" ? "no-pause" : v === "turbo6" ? "turbo6" : v === "leader0" ? "leader0" : v === "touchpad" || v === "touchpad-os" ? "touchpad" : v === "touchpad-gestures" ? "touchpad-gestures" : v === "touchpad-434" ? "touchpad-434" : "combo-names";
 }
 
 /** ?tester: open the matrix tester on start. */

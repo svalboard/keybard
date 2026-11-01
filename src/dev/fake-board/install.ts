@@ -21,7 +21,8 @@ function showBadge(choice: FakeBoardChoice, wipe: () => void) {
         : choice === "turbo6" ? `${FAKE_BOARD_PRODUCT_NAME}, updated from turbo 6`
         : choice === "leader0" ? `${FAKE_BOARD_PRODUCT_NAME}, leader timeout stored as 0`
         : choice === "touchpad" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads`
-        : choice === "touchpad-gestures" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads on built-in gestures` : FAKE_BOARD_PRODUCT_NAME;
+        : choice === "touchpad-gestures" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads on built-in gestures`
+        : choice === "touchpad-434" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads, v4.3.4 firmware` : FAKE_BOARD_PRODUCT_NAME;
     const reset = document.createElement("button");
     reset.type = "button";
     reset.textContent = "Reset";
@@ -44,11 +45,12 @@ export function installFakeBoard(choice: FakeBoardChoice): HIDDevice {
     // "touchpad" is this firmware with an Azoteq touchpad on each half, and a computer that asks
     // for touchpad mode (Input Mode 3) as Windows and Linux do; "touchpad-gestures" the same
     // board where it never asks (a Mac), so the pads run their built-in gestures.
-    const pads = choice === "touchpad" || choice === "touchpad-gestures";
+    // "touchpad-434" is v4.3.4's firmware on that board: the touch page only.
+    const pads = choice === "touchpad" || choice === "touchpad-gestures" || choice === "touchpad-434";
     const current = choice === "combo-names" || choice === "turbo6" || choice === "leader0" || pads;
     const device = new FakeSvalboardDevice({ comboLabels: choice !== "old", typingPause: current, flickerLatch: current, debounceSwitch: current,
         timingUsOnly: current, seedTurbo: choice === "turbo6" ? 6 : undefined, seedLeaderZero: choice === "leader0", reportLength: current ? 64 : 32,
-        padGestures: current, touchpad: pads, hostTouchpad: choice === "touchpad" });
+        padGestures: current, touchpad: pads, hostTouchpad: choice === "touchpad" || choice === "touchpad-434", multiFinger: choice !== "touchpad-434" });
     const wipe = () => {
         device.forgetSettings();
         window.location.reload();

@@ -50,6 +50,13 @@ the chip's tap and press-and-hold rules. Run with
      back, never a pending change, and the UI stays in the new mode for
      2.5 s; back to Automatic the same. In Automatic a report with no
      valid pad never blinks the settings in.
+ 16. A write the board doesn't take says so and shows the board's value
+     again; palm rejection changes live; a half that stops answering shows
+     as gone after a moment while the other pad and the mode carry on, and
+     nothing moves when it comes back; no leave-page prompt for settings
+     already on the board.
+ 17. v4.3.4 firmware (?fakeBoard=touchpad-434): no mode control, no palm
+     rejection, the fingers page never read, the dialog works as before.
 
 Flows 1-11 use ?fakeBoard=touchpad-gestures, where the chip's settings apply.
 
@@ -523,13 +530,14 @@ def flow_mode_immediate(browser, url):
         assert all(x[3] == 1 for x in samples), f"{query}: the board's mode changed back"
         assert mode_writes(page) == [1], f"{query}: writes {mode_writes(page)}"
         assert page.locator("[data-builtin-confirm]").count() == 0, "the confirmation came back"
-        assert page.evaluate(BOXES_JS) == first, "the layout moved"
+        now = page.evaluate(BOXES_JS)
+        assert now == first, f"{query}: the layout moved: {({k: (first[k], now[k]) for k in first if first[k] != now[k]})}"
         # The tuning steppers write at once too, with no pending change (the dialog covers Apply).
-        press_slider(page, "Dead zone", "ArrowLeft", 2)  # 1.2 -> 1.0 mm
+        press_slider(page, "Dead zone", "ArrowLeft", 1)  # 1.2 -> 1.0 mm
         page.wait_for_function("window.keybardFakeBoard.device.firmware.padTuning.deadZone === 100", timeout=3000)
         page.wait_for_timeout(500)
         assert not page.evaluate(PENDING_JS), f"{query}: the dead zone became a pending change"
-        press_slider(page, "Dead zone", "ArrowRight", 2)
+        press_slider(page, "Dead zone", "ArrowRight", 1)
         page.wait_for_function("window.keybardFakeBoard.device.firmware.padTuning.deadZone === 120", timeout=3000)
         # Back to Automatic: at once too, no pending change.
         page.get_by_role("radio", name="Automatic").click()
@@ -539,9 +547,92 @@ def flow_mode_immediate(browser, url):
         expect(page.get_by_role("radio", name="Automatic")).to_have_attribute("aria-checked", "true")
         expect(page.get_by_role("slider", name="Dead zone")).to_have_count(0)
         assert mode_writes(page) == [1, 0], mode_writes(page)
-        assert page.evaluate(BOXES_JS) == first, "the layout moved"
+        if query == FROM_POINTING:
+            # The switch made in the dialog reaches Pointing Devices behind it (0x2C read again).
+            page.get_by_role("radio", name="Built-in gestures").click()
+            page.get_by_role("dialog", name="Use built-in gestures?").get_by_role("button", name="Use built-in gestures").click()
+            page.wait_for_function("window.keybardFakeBoard.device.firmware.padMode === 1", timeout=3000)
+            expect(page.locator("[data-builtin-confirm]")).to_have_count(0, timeout=5000)  # Escape goes to the tuning dialog
+            page.keyboard.press("Escape")
+            expect(page.get_by_role("dialog", name=TITLE)).to_be_hidden(timeout=5000)
+            for name in SWITCHES:
+                expect(page.get_by_role("group", name=name, exact=True)).to_be_visible(timeout=5000)
+            assert not page.evaluate(PENDING_JS), "a pending change in Pointing Devices"
+            assert no_leave_prompt(page), "leaving the page warns about the mode"
+            assert not errors, errors
+            context.close()
+            continue
+        now = page.evaluate(BOXES_JS)
+        assert now == first, f"{query}: the layout moved: {({k: (first[k], now[k]) for k in first if first[k] != now[k]})}"
         assert not errors, errors
         context.close()
+
+
+def no_leave_prompt(page: Page) -> bool:
+    """Closing the page asks nothing: no unsaved edits (board state never counts as one)."""
+    asked = []
+    page.on("dialog", lambda d: (asked.append(d.type), d.dismiss()))
+    page.close(run_before_unload=True)
+    time.sleep(0.5)
+    return "beforeunload" not in asked
+
+
+def flow_errors_and_halves(browser, url):
+    """A write the board doesn't take says so and shows the board's value; palm
+    rejection changes live; a missing half shows as gone after a moment, with the
+    other pad and the mode carrying on."""
+    context, page, errors = open_page(browser, url, FROM_SETTINGS, board=PTP)
+    expect(page.locator("[data-step='Palm rejection']")).to_be_visible(timeout=15000)
+    page.locator("[data-pad-svg]").nth(1).wait_for(timeout=15000)
+    # The next palm write fails on the way to the board.
+    page.evaluate("""() => { const d = window.keybardFakeBoard.device; const send = d.sendReport.bind(d); let armed = true;
+        d.sendReport = async (id, data) => { const b = new Uint8Array(data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
+            if (armed && b[5] === 0xfe && b[6] === 0x07 && b[8] === 58) { armed = false; throw new Error('simulated write failure'); }
+            return send(id, data); }; }""")
+    press_slider(page, "Palm rejection", "ArrowRight", 1)
+    expect(page.locator("[data-write-error]")).to_be_visible(timeout=5000)
+    expect(page.locator("[data-step='Palm rejection'] [data-step-value]")).to_have_text("Off", timeout=5000)
+    assert page.evaluate("window.keybardFakeBoard.device.firmware.padPalm") == 0
+    # The next one lands, live: the error goes and the board has it.
+    press_slider(page, "Palm rejection", "ArrowRight", 1)
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padPalm === 4", timeout=5000)
+    expect(page.locator("[data-write-error]")).to_have_count(0, timeout=5000)
+    page.locator("[data-pad] [data-palm]").first.wait_for(state="attached", timeout=30000)  # the resting palm, over 4 channels
+    press_slider(page, "Palm rejection", "ArrowLeft", 1)
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padPalm === 0", timeout=5000)
+    # The left half stops answering: shown as gone after about a second; the right pad and the mode carry on.
+    first = page.evaluate(BOXES_JS)
+    page.evaluate("window.keybardFakeBoard.device.firmware.leftMissing = true")
+    expect(page.locator("[data-pad='left'] [data-pad-absent]")).to_be_visible(timeout=5000)
+    expect(page.locator("[data-pad='right'] [data-pad-svg]")).to_be_visible()
+    expect(page.locator("[data-os-mode-note]")).to_be_visible()
+    page.evaluate("window.keybardFakeBoard.device.firmware.leftMissing = false")
+    expect(page.locator("[data-pad='left'] [data-pad-svg]")).to_be_visible(timeout=5000)
+    page.wait_for_timeout(300)
+    assert page.evaluate(BOXES_JS) == first, "the layout moved after the half came back"
+    assert no_leave_prompt(page), "leaving the page warns about settings already on the board"
+    assert not [e for e in errors if "simulated write failure" not in e], errors
+    context.close()
+
+
+def flow_old_firmware(browser, url):
+    """v4.3.4's firmware (the touch page only): no mode control, no palm rejection,
+    no fingers page read, and the dialog works as before."""
+    context, page, errors = open_page(browser, url, FROM_SETTINGS, board="fakeBoard=touchpad-434")
+    expect(page.locator("[data-pad='left'] [data-pad-svg]")).to_be_visible(timeout=15000)
+    page.wait_for_timeout(3000)
+    assert page.locator("[data-touchpad-mode]").count() == 0, "a mode control on firmware without it"
+    assert page.get_by_role("slider", name="Palm rejection").count() == 0, "palm rejection on firmware without it"
+    assert page.evaluate("window.keybardFakeBoard.device.firmware.fingersReads") == 0, "the fingers page was read"
+    page.locator("[data-pad] [data-outcome]").first.wait_for(state="attached", timeout=30000)
+    expect(page.locator("[data-os-mode-note]")).to_be_visible()
+    assert not errors, errors
+    context.close()
+    context, page, errors2 = open_page(browser, url, "panel=pointing", board="fakeBoard=touchpad-434")
+    expect(page.get_by_role("button", name=LINK)).to_be_visible(timeout=15000)
+    assert page.get_by_role("combobox", name="Touchpad Mode").count() == 0, "a mode dropdown on firmware without it"
+    assert not errors2, errors2
+    context.close()
 
 
 def flow_confirm_layout(browser, url):
@@ -633,6 +724,8 @@ def main() -> int:
         ("13. the mode toggle: the check (Escape, Cancel write nothing), confirm writes, Automatic at once, nothing moves", flow_mode_toggle),
         ("14. the check fits at 390 and 1440 px, light and dark", flow_confirm_layout),
         ("15. the mode switch writes at once with Manual Updates: no pending change, read back, the UI stays (both entries)", flow_mode_immediate),
+        ("16. a failed write says so and shows the board's value; palm live; a missing half; no leave-page prompt", flow_errors_and_halves),
+        ("17. v4.3.4 firmware: no mode, no palm, no fingers page read; works as before", flow_old_firmware),
     ]
     only = os.environ.get("E2E_ONLY")
     if only:

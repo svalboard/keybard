@@ -139,6 +139,8 @@ export interface FakeFirmwareOptions {
     touchpad?: boolean;
     /** The computer asks for touchpad mode (Input Mode 3), as Windows and Linux do. Default false. */
     hostTouchpad?: boolean;
+    /** Firmware with the fingers page, palm rejection and the touchpad mode (after v4.3.4). Default true. */
+    multiFinger?: boolean;
 }
 
 /** A Sval table (TABLE_SCAN ids 0-4): its storage, entry size and "in use" test. */
@@ -214,6 +216,10 @@ export class FakeSvalFirmware {
     readonly touchpad: boolean;
     /** The computer asks for touchpad mode (Input Mode 3); tests may flip it. */
     hostTouchpad: boolean;
+    /** Firmware with the fingers page, palm rejection and the touchpad mode; false is v4.3.4's touch page only. */
+    readonly multiFinger: boolean;
+    /** Tests: the left half's pad stops answering (its blocks are not valid). */
+    leftMissing = false;
     /** The touchpad mode (VIA 59): 0 Automatic (the default), 1 built-in gestures. */
     padMode = 0;
     /** Tests: every this-many touch page reads, a report with no valid pad (a fresh start, a missed split read). */
@@ -221,6 +227,8 @@ export class FakeSvalFirmware {
     /** Tests: every this-many reads, the left pad valid but without its touchpad flag, as the real board's other half shows for a few reports while its split link catches up. */
     leftOsDropEvery = 0;
     private touchReads = 0;
+    /** Fingers page reads, for tests (older firmware never gets one). */
+    fingersReads = 0;
     /** The pads are a touchpad now: the computer asks, and the mode lets it (the touch pages' OS bits, 0x2C bit 4). */
     get padsOs(): boolean {
         return this.hostTouchpad && this.padMode === 0;
@@ -283,6 +291,7 @@ export class FakeSvalFirmware {
         this.padGestures = options.padGestures ?? true;
         this.touchpad = options.touchpad ?? false;
         this.hostTouchpad = options.hostTouchpad ?? false;
+        this.multiFinger = options.multiFinger ?? true;
         this.onChange = options.onChange;
         if (this.timingUsOnly) this.migrateTiming();
         this.factoryKeymap = options.factoryKeymap;
@@ -364,7 +373,7 @@ export class FakeSvalFirmware {
 
     get featureFlags3(): number {
         return (this.typingPause ? FLAG3_TYPING_PAUSE : 0) | (this.flickerLatch ? FLAG3_FLICKER_LATCH : 0) | (this.padGestures ? FLAG3_PAD_GESTURES : 0)
-            | (this.padGestures && this.touchpad ? FLAG3_PAD_TUNING | FLAG3_PAD_TOUCH | FLAG3_PAD_FINGERS : 0);
+            | (this.padGestures && this.touchpad ? FLAG3_PAD_TUNING | FLAG3_PAD_TOUCH | (this.multiFinger ? FLAG3_PAD_FINGERS : 0) : 0);
     }
 
     private count(row: number, col: number) {
@@ -736,7 +745,7 @@ export class FakeSvalFirmware {
             }
             return;
         }
-        if (this.padGestures && this.touchpad && valueId === 59) {
+        if (this.padGestures && this.touchpad && this.multiFinger && valueId === 59) {
             if (command === 0x07) {
                 this.customWrites.push({ id: valueId, value: Array.from(value.subarray(0, 2)) });
                 this.padMode = value[0] === 1 ? 1 : 0;
@@ -745,7 +754,7 @@ export class FakeSvalFirmware {
             }
             return;
         }
-        if (this.padGestures && this.touchpad && valueId === 58) {
+        if (this.padGestures && this.touchpad && this.multiFinger && valueId === 58) {
             if (command === 0x07) {
                 this.customWrites.push({ id: valueId, value: Array.from(value.subarray(0, 2)) });
                 this.padPalm = Math.min(56, value[0] | (value[1] << 8));
@@ -829,7 +838,7 @@ export class FakeSvalFirmware {
     /** The fingers page of 0x2D (docs/protocol.md "Touchpad fingers"), from the scripted touches. */
     private fingersPage(out: Uint8Array): void {
         const now = this.now() * this.touchSpeed;
-        const [left, right] = this.padModels(now).map((m) => ({ ...m.readFingers(now), os: this.padsOs }));
+        const [left, right] = this.padModels(now).map((m, i) => ({ ...m.readFingers(now), os: this.padsOs, ...(this.leftMissing && i === 0 ? { valid: false } : {}) }));
         out.set(packPadFingers({ palm: this.padPalm, left, right }));
     }
 
@@ -839,7 +848,7 @@ export class FakeSvalFirmware {
         this.touchReads++;
         const blank = this.invalidFrameEvery > 0 && this.touchReads % this.invalidFrameEvery === 0;
         const drop = this.leftOsDropEvery > 0 && this.touchReads % this.leftOsDropEvery === 1;
-        const blocks = this.padModels(now).map((m, i) => ({ ...m.read(now), os: this.padsOs && !(i === 0 && drop), ...(blank ? { valid: false } : {}) }));
+        const blocks = this.padModels(now).map((m, i) => ({ ...m.read(now), os: this.padsOs && !(i === 0 && drop), ...(blank || (this.leftMissing && i === 0) ? { valid: false } : {}) }));
         const c = this.chipSettings();
         out.set(packPadTouch({
             tapOn: c.tapOn, twoFingerOn: c.twoFingerOn, holdOn: c.holdOn, elapsedMs: 0,
@@ -1015,7 +1024,7 @@ export class FakeSvalFirmware {
                 data[18] = s.storageFlags & 0x05; // bit 1 (write failed) never happens here
                 data[19] = this.featureFlags2;
                 if (length > 20) data[20] = this.featureFlags3;
-                if (length > 21) data[21] = this.padGestures && this.touchpad ? FLAG4_PAD_PALM | FLAG4_PAD_MODE : 0;
+                if (length > 21) data[21] = this.padGestures && this.touchpad && this.multiFinger ? FLAG4_PAD_PALM | FLAG4_PAD_MODE : 0;
                 break;
             }
             case 0x2a: // STORAGE_RESET_CLEAR
@@ -1140,7 +1149,7 @@ export class FakeSvalFirmware {
                 const page = length > 3 ? data[3] : 0;
                 if (length > 2) data.subarray(2, length).fill(0);
                 if (page === 1 && this.padGestures && this.touchpad && length >= 2 + 56) this.touchPage(data.subarray(2, length));
-                if (page === 2 && this.padGestures && this.touchpad && length >= 2 + 56) this.fingersPage(data.subarray(2, length));
+                if (page === 2 && this.padGestures && this.touchpad && this.multiFinger && length >= 2 + 56) { this.fingersReads++; this.fingersPage(data.subarray(2, length)); }
                 break;
             }
             case 0x2f: // POINTING_CONTACTS (not advertised): format 0

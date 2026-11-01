@@ -1,9 +1,35 @@
 import { useCallback, useState, type ReactNode } from "react";
 
+import { useKeyboard } from "@/contexts/KeyboardContext";
+import { keyboardService } from "@/services/keyboard.service";
+import type { KeyboardInfo } from "@/types/keyboard.types";
+
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { PAD_MODE_AUTO, PAD_MODE_BUILTIN, PAD_MODE_LABELS } from "@/utils/touchpad-tuning";
+import { PAD_MODE_AUTO, PAD_MODE_BUILTIN, PAD_MODE_KEY, PAD_MODE_LABELS } from "@/utils/touchpad-tuning";
+
+type SetValue = (key: string, value: number, opts?: { now?: boolean }) => Promise<boolean>;
+
+/**
+ * The touchpad mode's one write path, for the tuning dialog and Pointing
+ * Devices alike: on the board at once and read back (useMenuValues, board
+ * state, never a pending change), then POINTING_HARDWARE read again, whose
+ * touchpad-mode bit follows the switch, as board state too (the switches in
+ * Pointing Devices follow it, and it is never an unsaved edit). A failed read
+ * keeps the report from before.
+ */
+export function useWriteTouchpadMode(setValue: SetValue): (mode: number) => Promise<void> {
+    const { keyboard, applyBoardState } = useKeyboard();
+    return useCallback(async (mode: number) => {
+        const ok = await setValue(PAD_MODE_KEY, mode, { now: true });
+        if (!ok || !keyboard) return;
+        const probe: KeyboardInfo = { ...keyboard };
+        await keyboardService.getPointingHardware(probe);
+        const hw = probe.pointing_hardware;
+        if (hw) applyBoardState((kb) => ({ ...kb, pointing_hardware: hw }));
+    }, [setValue, keyboard, applyBoardState]);
+}
 
 /**
  * The check before the pads leave touchpad mode for their built-in gestures:

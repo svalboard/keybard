@@ -27,6 +27,8 @@ export interface FakeSvalboardOptions {
     touchpad?: boolean;
     /** The computer asks for touchpad mode (Input Mode 3), as Windows and Linux do. Default false. */
     hostTouchpad?: boolean;
+    /** Firmware with the fingers page, palm rejection and the touchpad mode. Default true. */
+    multiFinger?: boolean;
     /**
      * A board that ran turbo TURBO with both waits at 0 before this firmware:
      * seeded that way, fresh on every load (not saved), so the firmware's boot
@@ -160,6 +162,7 @@ export class FakeSvalboardDevice extends EventTarget {
             padGestures: options.padGestures ?? true,
             touchpad: options.touchpad ?? false,
             hostTouchpad: options.hostTouchpad ?? false,
+            multiFinger: options.multiFinger ?? true,
             onChange: (state) => { if (this.persisting) storeBoard(state); },
             factoryKeymap: seedKeymap(),
         });

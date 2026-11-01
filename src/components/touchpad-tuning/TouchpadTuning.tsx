@@ -14,7 +14,7 @@ import {
     type TouchOutcome,
 } from "@/utils/touchpad-tuning";
 import { PadView, type PadTiming } from "./PadView";
-import { TouchpadModeControl, useTouchpadModeChange } from "./TouchpadMode";
+import { TouchpadModeControl, useTouchpadModeChange, useWriteTouchpadMode } from "./TouchpadMode";
 
 /** Finished touches kept per pad, newest first, in the pad's scrolling list. */
 const OUTCOMES = 50;
@@ -91,22 +91,26 @@ interface LiveState {
      * flag can drop for a few reports while the split link catches up), and
      * a report with no valid pad keeps the last answer. Nothing blinks.
      */
-    padsOs: boolean;
+    padsOs: boolean | null; // null: no pad has answered yet
     readAt: number;
     left: PadLive;
     right: PadLive;
 }
 
 const NO_LIVE: LiveState = {
-    report: null, readAt: 0, padsOs: false,
+    report: null, readAt: 0, padsOs: null,
     left: NO_PAD,
     right: NO_PAD,
 };
+
+/** A pad missing from the reports this long is shown as gone. */
+const PAD_GONE_MS = 1000;
 
 /** Both pads, live, while the view is open. */
 function useLiveTouch(enabled: boolean, keyboard: KeyboardInfo | null | undefined, connected: boolean): LiveState {
     const [live, setLive] = useState<LiveState>(NO_LIVE);
     const trackers = useRef({ left: new TouchTracker(), right: new TouchTracker() });
+    const lastValid = useRef({ left: -Infinity, right: -Infinity });
     useEffect(() => { getPadTouch().setConnection(keyboard ?? null, connected); }, [keyboard, connected]);
     useEffect(() => {
         if (!enabled) return;
@@ -118,9 +122,13 @@ function useLiveTouch(enabled: boolean, keyboard: KeyboardInfo | null | undefine
                 const padsOs = valid.length ? valid.some((b) => b.os) : prev.padsOs;
                 const next: LiveState = { report, readAt: at, padsOs, left: prev.left, right: prev.right };
                 for (const side of ["left", "right"] as const) {
+                    // A pad that answered within the last second keeps its last picture through a
+                    // report without it (a fresh start, a missed split read): it never blinks to "no touchpad".
+                    if (!report[side].valid && prev[side].block.valid && at - lastValid.current[side] < PAD_GONE_MS) continue;
+                    if (report[side].valid) lastValid.current[side] = at;
                     const t = trackers.current[side];
                     // Each pad's touch is read in the board's one mode (padsOs), not its own flag.
-                    const block = report[side].valid ? { ...report[side], os: padsOs } : report[side];
+                    const block = report[side].valid ? { ...report[side], os: !!padsOs } : report[side];
                     const done = t.take(block, report, report.fingers?.[side] ?? null, report.fingers?.palm ?? 0);
                     next[side] = {
                         block,
@@ -156,7 +164,7 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
     const { keyboard, isConnected } = useKeyboard();
     const menuIndex = pointingMenuIndex(keyboard?.menus);
     const menu = menuIndex >= 0 ? keyboard?.menus?.[menuIndex] : undefined;
-    const { values, setValue, error } = useMenuValues(menu);
+    const { values, setValue, writeError: error } = useMenuValues(menu);
     const supported = !!keyboard && hasPadTuning(keyboard.feature_flags3) && boardHasTouchpad(keyboard);
     const liveOn = supported && isConnected && hasPadTouch(keyboard?.feature_flags3);
     const live = useLiveTouch(liveOn, keyboard, isConnected);
@@ -165,7 +173,8 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
     // The dialog tunes against the live pads, so every control here writes to the board at once (board
     // state, never a pending change; the dialog covers Apply), and says so if the board didn't take it.
     const setNow = (key: string, v: number) => { void setValue(key, v, { now: true }); };
-    const modeChange = useTouchpadModeChange((m) => setNow(PAD_MODE_KEY, m));
+    const writeMode = useWriteTouchpadMode(setValue);
+    const modeChange = useTouchpadModeChange((m) => { void writeMode(m); });
 
     if (!supported) return <p className="px-3 py-2 text-sm text-muted-foreground">Connect a board with a touchpad to tune it.</p>;
 
@@ -190,7 +199,8 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
     // Touchpad mode (Input Mode 3): the computer makes the taps and scrolls from the contacts, with its own
     // settings, so the chip's gesture settings change nothing there. The pads' reports say which mode is in
     // force (the firmware clears their touchpad bits with built-in gestures, even while the OS asks).
-    const osMode = live.padsOs;
+    // Until the pads first answer, touchpad mode (what ships): the chip's settings never show and then vanish.
+    const osMode = liveOn && (live.padsOs ?? true);
     const windows = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 
     const controls = (

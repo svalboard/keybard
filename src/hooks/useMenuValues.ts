@@ -22,7 +22,7 @@ export function pointingMenuIndex(menus: CustomUIMenuItem[] | undefined): number
  * the pending changes, and reads the value back: board state, not an edit, so
  * it goes into the draft and the loaded copy alike (Discard never reverts it,
  * no unsaved-changes prompt). It resolves true once the board has it; on a
- * failed write it shows the board's value again and sets `error`. For the
+ * failed write it shows the board's value again and sets `writeError`. For the
  * touchpad tuning dialog, which tunes against the live pads.
  */
 export function useMenuValues(menu: CustomUIMenuItem | undefined) {
@@ -49,9 +49,17 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
             setLoading(false);
         }
     }, [menu, isConnected, keyboard?.custom_values]);
+    // A write made at once that the board didn't take: kept until the next one, or another
+    // menu or connection, not through the values it refreshed (the board's value shown again).
+    const [writeError, setWriteError] = useState<string | null>(null);
+    useEffect(() => { setWriteError(null); }, [menu, isConnected]);
 
     const setValue = useCallback(async (key: string, value: number, opts?: { now?: boolean }): Promise<boolean> => {
-        if (!menu || !isConnected || !keyboard) return false;
+        if (!menu || !isConnected || !keyboard) {
+            // A write meant for the board now (the confirmation outlived the connection): say it didn't happen.
+            if (opts?.now && menu) setWriteError("The board isn't connected, so nothing changed.");
+            return false;
+        }
         const refs = customValueService.extractAllItemsWithRefs([menu]);
         const find = (k: string) => refs.find(({ ref }) => ref.key === k);
         const found = find(key);
@@ -97,7 +105,7 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
             return true;
         }
         try {
-            setError(null);
+            setWriteError(null);
             await write();
             return true;
         } catch (err) {
@@ -108,10 +116,10 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
                 customValueService.setCached(key, v);
                 store([[key, v]]);
             } catch { /* the board isn't answering: keep the shown value */ }
-            setError(`The board didn't take ${f.item.label ?? key}: ${err instanceof Error ? err.message : String(err)}`);
+            setWriteError(`The board didn't take ${f.item.label ?? key}: ${err instanceof Error ? err.message : String(err)}`);
             return false;
         }
     }, [menu, isConnected, queue, keyboard, setKeyboard, applyBoardState]);
 
-    return { values, setValue, loading, error };
+    return { values, setValue, loading, error, writeError };
 }
