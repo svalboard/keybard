@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useChanges } from "@/contexts/ChangesContext";
 import { useKeyboard } from "@/contexts/KeyboardContext";
@@ -31,6 +31,9 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
     const [values, setValues] = useState<Map<string, number>>(new Map());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // Values written at once and not yet read back: shown over the board state, which takes them
+    // only from the read-back, so a refresh in between (another write's read-back) can't flick them back.
+    const inflight = useRef(new Map<string, number>());
 
     useEffect(() => {
         if (!menu) {
@@ -41,7 +44,9 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
         setError(null);
         try {
             if (keyboard?.custom_values) customValueService.populateCacheFromEntries(keyboard.custom_values);
-            setValues(customValueService.getCache());
+            const shown = customValueService.getCache();
+            for (const [k, v] of inflight.current) shown.set(k, v);
+            setValues(shown);
         } catch (err) {
             console.error("Failed to load custom values:", err);
             setError("Failed to load settings from keyboard");
@@ -116,12 +121,17 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
         const keys = [...new Set([...writes.map(([k]) => k), ...readBackKeys(key)])];
         const before: [string, number][] = keys.map(k => [k, customValueService.getCache().get(k) ?? 0]);
         setWriteError(null);
+        for (const [k, v] of writes) inflight.current.set(k, v);
         show(writes); // shown at once; board state only from the read-back below
+        const done = () => { for (const [k, v] of writes) if (inflight.current.get(k) === v) inflight.current.delete(k); };
         try {
             await send();
-            storeBoard(await readBack(keys));
+            const back = await readBack(keys);
+            done();
+            storeBoard(back);
             return true;
         } catch (err) {
+            done();
             // Show what the board has, not the value that didn't land; if the board doesn't
             // answer either, what was shown before (board state never took the new value).
             try {
