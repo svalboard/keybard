@@ -216,9 +216,18 @@ export class FakeSvalFirmware {
     hostTouchpad: boolean;
     /** The touchpad mode (VIA 59): 0 Automatic (the default), 1 built-in gestures. */
     padMode = 0;
+    /**
+     * Tests: report the touchpad mode the computer asked for, not the one in
+     * force, so the pages and 0x2C keep saying "touchpad" after a switch to
+     * built-in gestures. Keybard must go by its setting then.
+     */
+    reportRequestedMode = false;
+    /** Tests: every this-many touch page reads, a report with no valid pad (a fresh start, a missed split read). */
+    invalidFrameEvery = 0;
+    private touchReads = 0;
     /** The pads are a touchpad now: the computer asks, and the mode lets it (the touch pages' OS bits, 0x2C bit 4). */
     get padsOs(): boolean {
-        return this.hostTouchpad && this.padMode === 0;
+        return this.hostTouchpad && (this.padMode === 0 || this.reportRequestedMode);
     }
     /** The palm rejection (VIA 58): an area in channels, 0 off (the default). */
     padPalm = 0;
@@ -831,7 +840,8 @@ export class FakeSvalFirmware {
     /** The touch page of 0x2D (docs/protocol.md "Touchpad touch"), from the scripted touches. */
     private touchPage(out: Uint8Array): void {
         const now = this.now() * this.touchSpeed;
-        const blocks = this.padModels(now).map((m) => ({ ...m.read(now), os: this.padsOs }));
+        const blank = this.invalidFrameEvery > 0 && ++this.touchReads % this.invalidFrameEvery === 0;
+        const blocks = this.padModels(now).map((m) => ({ ...m.read(now), os: this.padsOs, ...(blank ? { valid: false } : {}) }));
         const c = this.chipSettings();
         out.set(packPadTouch({
             tapOn: c.tapOn, twoFingerOn: c.twoFingerOn, holdOn: c.holdOn, elapsedMs: 0,

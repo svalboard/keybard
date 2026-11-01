@@ -17,6 +17,11 @@ export function pointingMenuIndex(menus: CustomUIMenuItem[] | undefined): number
  * changes queue (so Live Updating and Manual Updates both apply), saved, then
  * read back for the values the board may have changed (clamped, rounded, or
  * set together) so every view shows the board's own values.
+ *
+ * setValue(key, value, { now: true }) writes at once whatever Live Updating
+ * says: for settings a live view tunes against the board (the touchpad tuning
+ * dialog, the touchpad mode), where a value shown but not yet on the board
+ * would contradict what the board does.
  */
 export function useMenuValues(menu: CustomUIMenuItem | undefined) {
     const { keyboard, setKeyboard, isConnected } = useKeyboard();
@@ -43,7 +48,7 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
         }
     }, [menu, isConnected, keyboard?.custom_values]);
 
-    const setValue = useCallback(async (key: string, value: number) => {
+    const setValue = useCallback(async (key: string, value: number, opts?: { now?: boolean }) => {
         if (!menu || !isConnected || !keyboard) return;
         const refs = customValueService.extractAllItemsWithRefs([menu]);
         const find = (k: string) => refs.find(({ ref }) => ref.key === k);
@@ -71,7 +76,7 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
             });
         };
         store(writes);
-        await queue(`Setting ${key}`, async () => {
+        const write = async () => {
             for (const [k, v] of writes) await customValueService.setValue(k, v, [menu]);
             await customValueService.save(found.ref.channel);
             const back: [string, number][] = [];
@@ -83,7 +88,9 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
                 back.push([k, v]);
             }
             if (back.length) store(back);
-        }, { type: "custom_ui", writeKey: `custom:${key}` });
+        };
+        if (opts?.now) await write();
+        else await queue(`Setting ${key}`, write, { type: "custom_ui", writeKey: `custom:${key}` });
     }, [menu, isConnected, queue, keyboard, setKeyboard]);
 
     return { values, setValue, loading, error };
