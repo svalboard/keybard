@@ -216,18 +216,12 @@ export class FakeSvalFirmware {
     hostTouchpad: boolean;
     /** The touchpad mode (VIA 59): 0 Automatic (the default), 1 built-in gestures. */
     padMode = 0;
-    /**
-     * Tests: report the touchpad mode the computer asked for, not the one in
-     * force, so the pages and 0x2C keep saying "touchpad" after a switch to
-     * built-in gestures. Keybard must go by its setting then.
-     */
-    reportRequestedMode = false;
     /** Tests: every this-many touch page reads, a report with no valid pad (a fresh start, a missed split read). */
     invalidFrameEvery = 0;
     private touchReads = 0;
     /** The pads are a touchpad now: the computer asks, and the mode lets it (the touch pages' OS bits, 0x2C bit 4). */
     get padsOs(): boolean {
-        return this.hostTouchpad && (this.padMode === 0 || this.reportRequestedMode);
+        return this.hostTouchpad && this.padMode === 0;
     }
     /** The palm rejection (VIA 58): an area in channels, 0 off (the default). */
     padPalm = 0;

@@ -45,12 +45,10 @@ the chip's tap and press-and-hold rules. Run with
      the chip settings come in live; back to Automatic writes at once; the
      dialog doesn't move. The same from Pointing Devices' dropdown.
  14. The check fits at 390 and 1440 px, light and dark.
- 15. Built-in gestures owns the mode: with the board still reporting the
-     touchpad mode the computer asked for (Windows keeps Input Mode 3), the
-     gesture settings stay shown every 100 ms for 2.5 s, nothing is written
-     back, the check doesn't return and nothing moves; Pointing Devices
-     shows its switches too. The mode is written at once with Manual
-     Updates (Live Updating off) too, and in Automatic a report with no
+ 15. The touchpad mode takes effect at once, also with Manual Updates
+     (Live Updating off): the switch is on the board with no Apply, read
+     back, never a pending change, and the UI stays in the new mode for
+     2.5 s; back to Automatic the same. In Automatic a report with no
      valid pad never blinks the settings in.
 
 Flows 1-11 use ?fakeBoard=touchpad-gestures, where the chip's settings apply.
@@ -486,57 +484,50 @@ def flow_mode_toggle(browser, url):
     context.close()
 
 
-def flow_mode_holds(browser, url):
-    """Built-in gestures owns the mode: the board keeps reporting the touchpad mode
-    the computer asked for (as Windows keeps Input Mode 3), and the gesture settings
-    must still show, every frame, with nothing written back."""
-    for query, manual in ((FROM_SETTINGS, False), (FROM_POINTING, True)):
-        context, page, errors = open_page(browser, url, query, board=PTP, init=MANUAL_UPDATES if manual else None)
+PENDING_JS = r"""() => [...document.querySelectorAll('button')].some(b => /^(Pending \(|Apply \d+ Change)/.test(b.textContent.trim()))"""
+
+
+def flow_mode_immediate(browser, url):
+    """The touchpad mode takes effect at once: with Manual Updates (Live Updating off)
+    the switch is written to the board right away, read back, and never becomes a
+    pending change; the UI stays in the new mode."""
+    for query in (FROM_SETTINGS, FROM_POINTING):
+        context, page, errors = open_page(browser, url, query, board=PTP, init=MANUAL_UPDATES)
         expect(page.locator("[data-os-mode-note]")).to_be_visible(timeout=15000)
+        assert page.evaluate("JSON.parse(localStorage.getItem('keyboard-settings') || '{}')['live-updating']") is False, "Manual Updates didn't take"
         page.locator("[data-pad-svg]").nth(1).wait_for(timeout=15000)
-        if manual:
-            assert page.evaluate("JSON.parse(localStorage.getItem('keyboard-settings') || '{}')['live-updating']") is False, "Manual Updates didn't take"
         # Automatic: a report with no valid pad now and then must not blink the settings in.
         page.evaluate("window.keybardFakeBoard.device.firmware.invalidFrameEvery = 3")
         blinks = page.evaluate("""async () => { let n = 0; for (let i = 0; i < 15; i++) { await new Promise(r => setTimeout(r, 100));
-            const s = [...document.querySelectorAll("[role='slider']")].some(e => e.getAttribute('aria-label') === 'Dead zone' && !e.closest('[aria-hidden="true"]'));
-            if (s) n++; } return n; }""")
+            if ([...document.querySelectorAll("[role='slider']")].some(e => e.getAttribute('aria-label') === 'Dead zone' && !e.closest('[aria-hidden="true"]'))) n++; } return n; }""")
         assert blinks == 0, f"{query}: the gesture settings blinked in {blinks} times in Automatic"
         page.evaluate("window.keybardFakeBoard.device.firmware.invalidFrameEvery = 0")
-        page.evaluate("window.keybardFakeBoard.device.firmware.reportRequestedMode = true")
-        page.wait_for_timeout(400)
         first = page.evaluate(BOXES_JS)
         page.get_by_role("radio", name="Built-in gestures").click()
         page.get_by_role("dialog", name="Use built-in gestures?").get_by_role("button", name="Use built-in gestures").click()
-        page.wait_for_function("window.keybardFakeBoard.device.firmware.padMode === 1", timeout=5000)
-        # Sample every 100 ms for 2.5 s: the stream still says "touchpad" all along.
-        samples = page.evaluate("""async () => {
-            const out = [];
-            for (let i = 0; i < 25; i++) {
-                await new Promise(r => setTimeout(r, 100));
-                const slider = [...document.querySelectorAll("[role='slider']")].find(e => e.getAttribute('aria-label') === 'Dead zone');
-                const shown = !!slider && !slider.closest('[aria-hidden="true"]') && getComputedStyle(slider).visibility !== 'hidden';
-                const note = document.querySelector('[data-os-mode-note]');
-                out.push([shown, !!note && getComputedStyle(note).visibility !== 'hidden', window.keybardFakeBoard.device.firmware.padsOs]);
-            }
-            return out;
-        }""")
-        assert all(s[2] for s in samples), "the board stopped reporting touchpad mode: the test proves nothing"
-        assert all(s[0] for s in samples), f"{query}: the gesture settings hid again: {[s[0] for s in samples]}"
-        assert not any(s[1] for s in samples), f"{query}: the touchpad-mode line came back"
-        assert page.get_by_role("radio", name="Built-in gestures").get_attribute("aria-checked") == "true"
-        assert mode_writes(page) == [1], f"{query}{' (Manual Updates)' if manual else ''}: writes {mode_writes(page)}"
+        # On the board at once, with no Apply.
+        page.wait_for_function("window.keybardFakeBoard.device.firmware.padMode === 1", timeout=3000)
+        samples = page.evaluate(r"""async () => { const out = []; for (let i = 0; i < 25; i++) { await new Promise(r => setTimeout(r, 100));
+            const s = [...document.querySelectorAll("[role='slider']")].some(e => e.getAttribute('aria-label') === 'Dead zone' && !e.closest('[aria-hidden="true"]'));
+            const radio = document.querySelector("[role='radio'][aria-checked='true']")?.textContent;
+            const pending = [...document.querySelectorAll('button')].some(b => /^(Pending \(|Apply \d+ Change)/.test(b.textContent.trim()));
+            out.push([s, radio, pending, window.keybardFakeBoard.device.firmware.padMode]); } return out; }""")
+        assert all(x[0] for x in samples[3:]), f"{query}: the gesture settings didn't stay: {[x[0] for x in samples]}"
+        assert all(x[1] == "Built-in gestures" for x in samples), f"{query}: the mode fell back: {[x[1] for x in samples]}"
+        assert not any(x[2] for x in samples), f"{query}: a pending change appeared"
+        assert all(x[3] == 1 for x in samples), f"{query}: the board's mode changed back"
+        assert mode_writes(page) == [1], f"{query}: writes {mode_writes(page)}"
         assert page.locator("[data-builtin-confirm]").count() == 0, "the confirmation came back"
         assert page.evaluate(BOXES_JS) == first, "the layout moved"
-        # The pads show the gesture guides, not touchpad mode.
-        page.locator("[data-pad] [data-close-up='one'], [data-pad] [data-close-up='two'], [data-pad] [data-close-up='many']").first.wait_for(state="attached", timeout=15000)
-        assert page.locator("[data-pad][data-gesture='os']").count() == 0, "a pad still drawn as in touchpad mode"
-        if query == FROM_POINTING:
-            # Behind the dialog, Pointing Devices shows the switches too.
-            page.keyboard.press("Escape")
-            for name in SWITCHES:
-                expect(page.get_by_role("group", name=name, exact=True)).to_be_visible(timeout=5000)
-            assert mode_writes(page) == [1], mode_writes(page)
+        # Back to Automatic: at once too, no pending change.
+        page.get_by_role("radio", name="Automatic").click()
+        page.wait_for_function("window.keybardFakeBoard.device.firmware.padMode === 0", timeout=3000)
+        page.wait_for_timeout(1000)
+        assert not page.evaluate(PENDING_JS), f"{query}: a pending change after Automatic"
+        expect(page.get_by_role("radio", name="Automatic")).to_have_attribute("aria-checked", "true")
+        expect(page.get_by_role("slider", name="Dead zone")).to_have_count(0)
+        assert mode_writes(page) == [1, 0], mode_writes(page)
+        assert page.evaluate(BOXES_JS) == first, "the layout moved"
         assert not errors, errors
         context.close()
 
@@ -572,8 +563,7 @@ def fingers_shots(browser, url, out):
         expect(page.locator("[data-builtin-confirm]")).to_be_visible(timeout=5000)
         page.wait_for_timeout(300)
         page.screenshot(path=os.path.join(out, f"confirm-{scheme}.png"))
-        # Both directions, with the board still reporting the mode the computer asked for.
-        page.evaluate("window.keybardFakeBoard.device.firmware.reportRequestedMode = true")
+        # Both directions.
         page.locator("[data-builtin-confirm] [data-confirm]").click()
         page.wait_for_timeout(2500)
         page.screenshot(path=os.path.join(out, f"switch-to-builtin-{scheme}.png"))
@@ -630,7 +620,7 @@ def main() -> int:
         ("12. touchpad mode: the system line, chip settings and switches absent, fingers and palms only", flow_os_mode),
         ("13. the mode toggle: the check (Escape, Cancel write nothing), confirm writes, Automatic at once, nothing moves", flow_mode_toggle),
         ("14. the check fits at 390 and 1440 px, light and dark", flow_confirm_layout),
-        ("15. built-in gestures holds while the board still reports touchpad mode: no flicker, no write back (both entries)", flow_mode_holds),
+        ("15. the mode switch writes at once with Manual Updates: no pending change, read back, the UI stays (both entries)", flow_mode_immediate),
     ]
     only = os.environ.get("E2E_ONLY")
     if only:

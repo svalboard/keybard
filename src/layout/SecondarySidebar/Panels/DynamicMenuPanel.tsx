@@ -7,7 +7,7 @@ import { useMenuValues } from "@/hooks/useMenuValues";
 import { openTouchpadTuning } from "@/components/touchpad-tuning/tuning-open";
 import type { CustomUIMenuItem } from "@/types/keyboard.types";
 import { boardHasTouchpad, PAD_KEYS, PADS_OS_KEY, padsInTouchpadMode } from "@/utils/touchpad-taps";
-import { PAD_MODE_BUILTIN, PAD_MODE_KEY } from "@/utils/touchpad-tuning";
+import { PAD_MODE_KEY } from "@/utils/touchpad-tuning";
 import { useTouchpadModeChange } from "@/components/touchpad-tuning/TouchpadMode";
 import { keyboardService } from "@/services/keyboard.service";
 import { PAD_TUNING_KEYS, TUNE_TOUCHPAD_ACTION } from "@/utils/touchpad-tuning";
@@ -48,7 +48,7 @@ const DynamicMenuPanel: React.FC<DynamicMenuPanelProps> = ({ menuIndex, horizont
     // Touchpad mode (VIA 59): to built-in gestures only after the check; then
     // POINTING_HARDWARE again, whose touchpad-mode bit follows it at once.
     const writeMode = useCallback(async (mode: number) => {
-        await setValue(PAD_MODE_KEY, mode, { now: true }); // the mode is live, Live Updating or not
+        await setValue(PAD_MODE_KEY, mode, { now: true }); // at once, never a pending change
         if (!keyboard) return;
         const next = { ...keyboard };
         await keyboardService.getPointingHardware(next);
@@ -60,8 +60,7 @@ const DynamicMenuPanel: React.FC<DynamicMenuPanelProps> = ({ menuIndex, horizont
         await setValue(key, value);
     }, [modeChange, setValue, values]);
     // Touchpad mode at connect: the chip's tap switches are hidden (touchpad-taps.ts PADS_OS_KEY).
-    // One owner: built-in gestures set means the switches apply; in Automatic, 0x2C says.
-    const padsOs = padsInTouchpadMode(keyboard) && (values.get(PAD_MODE_KEY) ?? 0) !== PAD_MODE_BUILTIN;
+    const padsOs = padsInTouchpadMode(keyboard);
     const shownValues = useMemo(() => {
         // Always set, so the switches show on a board that reports nothing.
         const out = new Map(withEffectiveTiming(values));

@@ -18,10 +18,10 @@ export function pointingMenuIndex(menus: CustomUIMenuItem[] | undefined): number
  * read back for the values the board may have changed (clamped, rounded, or
  * set together) so every view shows the board's own values.
  *
- * setValue(key, value, { now: true }) writes at once whatever Live Updating
- * says: for settings a live view tunes against the board (the touchpad tuning
- * dialog, the touchpad mode), where a value shown but not yet on the board
- * would contradict what the board does.
+ * setValue(key, value, { now: true }) writes at once, outside the pending
+ * changes (so Manual Updates, Apply and Discard never touch it), and reads the
+ * value back to show the board's own: for a setting that switches how the
+ * board behaves right away, the touchpad mode.
  */
 export function useMenuValues(menu: CustomUIMenuItem | undefined) {
     const { keyboard, setKeyboard, isConnected } = useKeyboard();
@@ -80,7 +80,7 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
             for (const [k, v] of writes) await customValueService.setValue(k, v, [menu]);
             await customValueService.save(found.ref.channel);
             const back: [string, number][] = [];
-            for (const k of readBackKeys(key)) {
+            for (const k of opts?.now ? [...new Set([key, ...readBackKeys(key)])] : readBackKeys(key)) {
                 const f = find(k);
                 if (!f) continue;
                 const v = await customValueService.get(f.ref.channel, f.ref.valueId, customValueService.getByteWidth(f.item));

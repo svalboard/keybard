@@ -8,7 +8,7 @@ import type { KeyboardInfo } from "@/types/keyboard.types";
 import { getPadTouch } from "@/services/pad-touch.service";
 import { boardHasTouchpad, PAD_HOLD_KEY, PAD_HOLD_MS, PAD_HOLD_MS_KEY } from "@/utils/touchpad-taps";
 import {
-    contactRadius, EMPTY_BLOCK, EMPTY_FINGERS, formatMm, formatPalm, hasPadMode, hasPadPalm, hasPadTouch, hasPadTuning, PAD_DEAD_ZONE_DEFAULT, PAD_DEAD_ZONE_KEY, PAD_MODE_AUTO, PAD_MODE_BUILTIN, PAD_MODE_KEY,
+    contactRadius, EMPTY_BLOCK, EMPTY_FINGERS, formatMm, formatPalm, hasPadMode, hasPadPalm, hasPadTouch, hasPadTuning, PAD_DEAD_ZONE_DEFAULT, PAD_DEAD_ZONE_KEY, PAD_MODE_AUTO, PAD_MODE_KEY,
     PAD_DEAD_ZONE_MM100, PAD_HEIGHT_MM100, PAD_PALM_CHANNELS, PAD_PALM_KEY, PAD_SCROLL_KEY, PAD_SCROLL_MM100, PAD_TAP_DEFAULT_MS, PAD_TAP_MS,
     PAD_TAP_MS_KEY, PAD_WIDTH_MM100, steps, TouchTracker, type MultiTouch, type PadFingersBlock, type PadTouchBlock, type PadTouchReport,
     type TouchOutcome,
@@ -102,23 +102,16 @@ const NO_LIVE: LiveState = {
     right: NO_PAD,
 };
 
-/**
- * Both pads, live, while the view is open. With built-in gestures set, a pad
- * is never taken as in touchpad mode, whatever its report says: the setting
- * owns the mode, and the report only tells Automatic's outcome.
- */
-function useLiveTouch(enabled: boolean, keyboard: KeyboardInfo | null | undefined, connected: boolean, builtin: boolean): LiveState {
+/** Both pads, live, while the view is open. */
+function useLiveTouch(enabled: boolean, keyboard: KeyboardInfo | null | undefined, connected: boolean): LiveState {
     const [live, setLive] = useState<LiveState>(NO_LIVE);
     const trackers = useRef({ left: new TouchTracker(), right: new TouchTracker() });
-    const builtinRef = useRef(builtin);
-    builtinRef.current = builtin;
     useEffect(() => { getPadTouch().setConnection(keyboard ?? null, connected); }, [keyboard, connected]);
     useEffect(() => {
         if (!enabled) return;
         const service = getPadTouch();
         const release = service.acquire();
-        const unsubscribe = service.subscribe((raw, at) => {
-            const report = builtinRef.current ? effective(raw) : raw;
+        const unsubscribe = service.subscribe((report, at) => {
             setLive((prev) => {
                 const valid = [report.left, report.right].filter((b) => b.valid);
                 const padsOs = valid.length ? valid.every((b) => b.os) : prev.padsOs;
@@ -145,17 +138,6 @@ function useLiveTouch(enabled: boolean, keyboard: KeyboardInfo | null | undefine
     return live;
 }
 
-/** The report as built-in gestures make it: no pad in touchpad mode. */
-function effective(r: PadTouchReport): PadTouchReport {
-    const f = r.fingers;
-    return {
-        ...r,
-        left: { ...r.left, os: false },
-        right: { ...r.right, os: false },
-        fingers: f ? { ...f, left: { ...f.left, os: false }, right: { ...f.right, os: false } } : f,
-    };
-}
-
 interface TouchpadTuningProps {
     /** Where it shows: the Settings card, or the dialog from Pointing Devices. */
     place: "settings" | "dialog";
@@ -174,13 +156,10 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
     const { values, setValue } = useMenuValues(menu);
     const supported = !!keyboard && hasPadTuning(keyboard.feature_flags3) && boardHasTouchpad(keyboard);
     const liveOn = supported && isConnected && hasPadTouch(keyboard?.feature_flags3);
-    // The touchpad mode setting, read before the live pads so it can own their mode.
-    const modeKnown = !!keyboard && hasPadMode(keyboard.feature_flags4);
-    const builtin = modeKnown && (values.get(PAD_MODE_KEY) ?? PAD_MODE_AUTO) === PAD_MODE_BUILTIN;
-    const live = useLiveTouch(liveOn, keyboard, isConnected, builtin);
-    // The dialog tunes against the live pads, so its writes go to the board at once, Live Updating or not.
-    const setNow = (key: string, v: number) => { void setValue(key, v, { now: true }); };
-    const modeChange = useTouchpadModeChange((m) => setNow(PAD_MODE_KEY, m));
+    const live = useLiveTouch(liveOn, keyboard, isConnected);
+    // The touchpad mode takes effect at once: written, read back and shown from the board, never staged
+    // with the pending changes (Live Updating off), so Apply and Discard never touch it.
+    const modeChange = useTouchpadModeChange((m) => { void setValue(PAD_MODE_KEY, m, { now: true }); });
 
     if (!supported) return <p className="px-3 py-2 text-sm text-muted-foreground">Connect a board with a touchpad to tune it.</p>;
 
@@ -203,9 +182,9 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
     };
     const palm = r?.fingers?.palm ?? palmValue;
     // Touchpad mode (Input Mode 3): the computer makes the taps and scrolls from the contacts, with its own
-    // settings, so the chip's gesture settings change nothing there. One owner: with built-in gestures set
-    // (useLiveTouch clears the pads' flags) they always apply; in Automatic, the pads' reports decide.
-    const osMode = !builtin && live.padsOs;
+    // settings, so the chip's gesture settings change nothing there. The pads' reports say which mode is in
+    // force (the firmware clears their touchpad bits with built-in gestures, even while the OS asks).
+    const osMode = live.padsOs;
     const windows = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 
     const controls = (
@@ -219,23 +198,23 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
             <div className={cn("grid gap-2 @lg:grid-cols-2", palmOn ? "@5xl:grid-cols-5" : "@5xl:grid-cols-4")} data-tuning-controls data-os-mode={osMode || undefined}>
                 {/* The chip's gesture settings do nothing in touchpad mode: hidden then, their space kept empty. */}
                 <ChipOnly hidden={osMode}>
-                    <StepControl label="Dead zone" value={deadZone} table={PAD_DEAD_ZONE_MM100} format={formatMm} onChange={(v) => setNow(PAD_DEAD_ZONE_KEY, v)}
+                    <StepControl label="Dead zone" value={deadZone} table={PAD_DEAD_ZONE_MM100} format={formatMm} onChange={(v) => setValue(PAD_DEAD_ZONE_KEY, v)}
                         note="How far a finger can move before a tap or a hold is canceled." />
                 </ChipOnly>
                 <ChipOnly hidden={osMode}>
-                    <StepControl label="Tap time" value={tapMs} table={PAD_TAP_MS} format={(v) => `${v} ms`} onChange={(v) => setNow(PAD_TAP_MS_KEY, v)}
+                    <StepControl label="Tap time" value={tapMs} table={PAD_TAP_MS} format={(v) => `${v} ms`} onChange={(v) => setValue(PAD_TAP_MS_KEY, v)}
                         note="A tap must lift within this." />
                 </ChipOnly>
                 <ChipOnly hidden={osMode}>
-                    <StepControl label="Hold time" value={holdMs} table={PAD_HOLD_MS} format={(v) => `${v} ms`} onChange={(v) => setNow(PAD_HOLD_MS_KEY, v)} disabled={!holdOn}
+                    <StepControl label="Hold time" value={holdMs} table={PAD_HOLD_MS} format={(v) => `${v} ms`} onChange={(v) => setValue(PAD_HOLD_MS_KEY, v)} disabled={!holdOn}
                         note={holdOn ? `Press and hold clicks after the tap time plus this: ${tapMs + holdMs} ms.` : "Press and Hold to Drag is off in Pointing Devices."} />
                 </ChipOnly>
                 <ChipOnly hidden={osMode}>
-                    <StepControl label="Scroll start" value={scroll} table={scrollTable} format={formatMm} onChange={(v) => setNow(PAD_SCROLL_KEY, v)}
+                    <StepControl label="Scroll start" value={scroll} table={scrollTable} format={formatMm} onChange={(v) => setValue(PAD_SCROLL_KEY, v)}
                         note="How far two fingers move, on average, before they scroll." />
                 </ChipOnly>
                 {palmOn && (
-                    <StepControl label="Palm rejection" value={palmValue} table={palmTable} format={formatPalm} onChange={(v) => setNow(PAD_PALM_KEY, v)}
+                    <StepControl label="Palm rejection" value={palmValue} table={palmTable} format={formatPalm} onChange={(v) => setValue(PAD_PALM_KEY, v)}
                         note="A contact larger than this, in the pad's channels, is a palm and is ignored." />
                 )}
             </div>
