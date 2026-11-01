@@ -50,7 +50,7 @@ The **Pointing Devices** panel tunes each side separately:
 
 Add **Sniper** keys to slow the cursor and **Boost** keys to speed it up. Either kind can be held or toggled.
 
-**Touchpads:** on Windows and Linux the pads are a touchpad (Touchpad mode), set up with the system's own touchpad settings. On a Mac, and in a BIOS, the pads make their own taps and scrolling (built-in gestures), tuned in **Settings → Touchpad tuning**. **Touchpad mode** at the top of that dialog can keep the built-in gestures on Windows and Linux too; it's a choice for the computer the board is plugged into, so it isn't saved in layout files.
+**Touchpads:** on Windows and Linux the pads are a touchpad (Touchpad mode), set up with the system's own touchpad settings. On a Mac, and in a BIOS, the pads make their own taps and scrolling (built-in gestures), tuned in **Settings → Touchpad tuning**. **Touchpad mode** at the top of that dialog can keep the built-in gestures on Windows and Linux too. It's saved on the board, not in layout files.
 
 ## Backups and layout files
 

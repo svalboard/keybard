@@ -28,7 +28,7 @@ const createLargeFile = (): File => {
 };
 
 describe('FileService', () => {
-  it('leaves the touchpad mode out of an export (a per-computer choice, not layout)', () => {
+  it('leaves the touchpad mode out of an export (a per-board setting, not layout)', () => {
     const kb = { rows: 1, cols: 1, layers: 1, keymap: [[4]], custom_values: [
       { key: 'id_pad_touchpad_mode', channel: 0, valueId: 59, data: [1] },
       { key: 'id_pad_tap', channel: 0, valueId: 51, data: [1] },

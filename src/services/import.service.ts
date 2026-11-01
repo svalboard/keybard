@@ -242,7 +242,7 @@ export class ImportService {
             const channelsToSave = new Set<number>();
 
             for (const entry of newKb.custom_values) {
-                // Per-computer board values (the touchpad mode) are never imported: they aren't layout.
+                // Per-board settings that aren't layout (the touchpad mode) are never imported.
                 if (NOT_LAYOUT_VALUES.includes(entry.key)) continue;
                 const menuEntry = menuRefMap.get(entry.key);
                 if (!menuEntry) {

@@ -135,7 +135,7 @@ export function prepareImport(file: KeyboardInfo, current?: KeyboardInfo): Impor
     const boardRefs = boardMenuRefs(current.menus);
     const menuItems = new Map([...boardRefs].map(([key, { item }]) => [key, item]));
     // Settings a firmware release replaced land on their replacement, either way round.
-    // Per-computer board values (the touchpad mode) are never imported: they aren't layout.
+    // Per-board settings that aren't layout (the touchpad mode) are never imported.
     const migrated = migrateCustomValues((file.custom_values ?? []).filter(entry => !NOT_LAYOUT_VALUES.includes(entry.key)), boardRefs);
     replaced = [...replaceZeroSettings(next.settings), ...limited, ...migrated.replaced];
     // Layer colors are custom values on the board; the file loader keeps them in layer_colors.

@@ -511,7 +511,7 @@ export class FileService {
             for (const entry of kbinfo.custom_values) {
                 // Skip layer colors (already handled above)
                 if (entry.key.match(/^id_layer\d+_color$/)) continue;
-                // Per-computer board values (the touchpad mode) aren't layout.
+                // Per-board settings that aren't layout (the touchpad mode).
                 if (NOT_LAYOUT_VALUES.includes(entry.key)) continue;
                 customValues.push({
                     key: entry.key,

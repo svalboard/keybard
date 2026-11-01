@@ -13,7 +13,7 @@ const board = (overrides: Partial<KeyboardInfo> = {}): KeyboardInfo => ({
 });
 
 describe('import preflight', () => {
-    it('never carries the touchpad mode (a per-computer choice, not layout)', () => {
+    it('never carries the touchpad mode (a per-board setting, not layout)', () => {
         const menus = [{ label: 'Pointing Device', content: [
             { label: 'Touchpad Mode', type: 'dropdown', options: ['Automatic', 'Built-in gestures'], content: ['id_pad_touchpad_mode', 0, 59] },
             { label: 'Tap to Click', type: 'toggle', content: ['id_pad_tap', 0, 51] },
