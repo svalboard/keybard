@@ -27,6 +27,12 @@ interface KeyboardContextType {
     resetToOriginal: () => void;
     markAsSaved: (confirmed?: KeyboardInfo | null) => void;
     getKeyboardSnapshot: () => KeyboardInfo | null;
+    /**
+     * Board state, not an edit: the patch goes into the draft and the copy
+     * loaded from the board alike, so it is never an unsaved change, Discard
+     * never reverts it and leaving the page doesn't warn about it.
+     */
+    applyBoardState: (patch: (kb: KeyboardInfo) => KeyboardInfo) => void;
     connectionSessionId: number;
     connectionState: "idle" | "connecting" | "loading" | "connected" | "offline" | "error";
     connectionError: string | null;
@@ -529,20 +535,21 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         };
     }, [isConnected, keyboard]);
 
-    // A pointing module the board finds after connect: board state, written into
-    // the draft and the loaded copy alike, so it never reads as an unsaved edit.
+    // Board state (a pointing module the board finds after connect, a setting written to
+    // the board at once): into the draft and the loaded copy alike, never an unsaved edit.
+    const applyBoardState = useCallback((patch: (kb: KeyboardInfo) => KeyboardInfo) => {
+        const current = keyboardRef.current;
+        if (!current) return;
+        const next = patch(current);
+        if (loadedLayoutRef.current === current) loadedLayoutRef.current = next;
+        setKeyboard(next);
+        setOriginalKeyboard((original) => original ? patch(original) : original);
+    }, [setKeyboard]);
     usePointingDetection({
         connected: isConnected && connectionState === "connected",
         boardLoad,
         getKeyboard: () => keyboardRef.current,
-        apply: useCallback((patch: (kb: KeyboardInfo) => KeyboardInfo) => {
-            const current = keyboardRef.current;
-            if (!current) return;
-            const next = patch(current);
-            if (loadedLayoutRef.current === current) loadedLayoutRef.current = next;
-            setKeyboard(next);
-            setOriginalKeyboard((original) => original ? patch(original) : original);
-        }, [setKeyboard]),
+        apply: applyBoardState,
     });
 
     // Reset keyboard to original state (used by revert)
@@ -584,6 +591,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         resetToOriginal,
         markAsSaved,
         getKeyboardSnapshot,
+        applyBoardState,
         connectionState,
         connectionError,
         connectionFix,
@@ -610,7 +618,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         activeLayerIndex,
         defaultLayerIndex,
     }), [
-        keyboard, setKeyboard, originalKeyboard, resetToOriginal, markAsSaved, getKeyboardSnapshot, connectionState,
+        keyboard, setKeyboard, originalKeyboard, resetToOriginal, markAsSaved, getKeyboardSnapshot, applyBoardState, connectionState,
         connectionError, connectionFix, connectionFirmware, dismissConnectionError, connectionSessionId,
         registerTargetChangeGuard, isChangingTarget, runDeviceMaintenance, hasUnsavedChanges, connected,
         isWebHIDSupported, isImporting, setIsImporting, loadedFrom, connect, connectDevice, disconnect, loadKeyboard,

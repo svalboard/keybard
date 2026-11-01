@@ -53,7 +53,8 @@ the chip's tap and press-and-hold rules. Run with
 
 Flows 1-11 use ?fakeBoard=touchpad-gestures, where the chip's settings apply.
 
-E2E_URL and E2E_SKIP_BUILD work as in fake_board_e2e.py. SHOT_DIR=path saves
+E2E_MANUAL=1 runs every flow with Manual Updates (Live Updating off); the
+flows pass both ways. E2E_URL and E2E_SKIP_BUILD work as in fake_board_e2e.py. SHOT_DIR=path saves
 screenshots. Needs Python Playwright with Chromium. Exits 1 when a check fails.
 """
 import os
@@ -77,6 +78,8 @@ MANUAL_UPDATES = """(() => { for (const k of Object.keys(localStorage).concat(['
 
 def open_page(browser, url: str, query: str, board="fakeBoard=touchpad-gestures", viewport=(1440, 1000), scheme="light", init=None):
     context = browser.new_context(viewport={"width": viewport[0], "height": viewport[1]}, color_scheme=scheme, reduced_motion="reduce")
+    # E2E_MANUAL=1 runs every flow with Manual Updates (Live Updating off).
+    init = init or (MANUAL_UPDATES if os.environ.get("E2E_MANUAL") else None)
     if init:
         context.add_init_script(init)
     page = context.new_page()
@@ -521,6 +524,13 @@ def flow_mode_immediate(browser, url):
         assert mode_writes(page) == [1], f"{query}: writes {mode_writes(page)}"
         assert page.locator("[data-builtin-confirm]").count() == 0, "the confirmation came back"
         assert page.evaluate(BOXES_JS) == first, "the layout moved"
+        # The tuning steppers write at once too, with no pending change (the dialog covers Apply).
+        press_slider(page, "Dead zone", "ArrowLeft", 2)  # 1.2 -> 1.0 mm
+        page.wait_for_function("window.keybardFakeBoard.device.firmware.padTuning.deadZone === 100", timeout=3000)
+        page.wait_for_timeout(500)
+        assert not page.evaluate(PENDING_JS), f"{query}: the dead zone became a pending change"
+        press_slider(page, "Dead zone", "ArrowRight", 2)
+        page.wait_for_function("window.keybardFakeBoard.device.firmware.padTuning.deadZone === 120", timeout=3000)
         # Back to Automatic: at once too, no pending change.
         page.get_by_role("radio", name="Automatic").click()
         page.wait_for_function("window.keybardFakeBoard.device.firmware.padMode === 0", timeout=3000)

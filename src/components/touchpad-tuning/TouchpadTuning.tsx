@@ -156,13 +156,16 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
     const { keyboard, isConnected } = useKeyboard();
     const menuIndex = pointingMenuIndex(keyboard?.menus);
     const menu = menuIndex >= 0 ? keyboard?.menus?.[menuIndex] : undefined;
-    const { values, setValue } = useMenuValues(menu);
+    const { values, setValue, error } = useMenuValues(menu);
     const supported = !!keyboard && hasPadTuning(keyboard.feature_flags3) && boardHasTouchpad(keyboard);
     const liveOn = supported && isConnected && hasPadTouch(keyboard?.feature_flags3);
     const live = useLiveTouch(liveOn, keyboard, isConnected);
     // The touchpad mode takes effect at once: written, read back and shown from the board, never staged
     // with the pending changes (Live Updating off), so Apply and Discard never touch it.
-    const modeChange = useTouchpadModeChange((m) => { void setValue(PAD_MODE_KEY, m, { now: true }); });
+    // The dialog tunes against the live pads, so every control here writes to the board at once (board
+    // state, never a pending change; the dialog covers Apply), and says so if the board didn't take it.
+    const setNow = (key: string, v: number) => { void setValue(key, v, { now: true }); };
+    const modeChange = useTouchpadModeChange((m) => setNow(PAD_MODE_KEY, m));
 
     if (!supported) return <p className="px-3 py-2 text-sm text-muted-foreground">Connect a board with a touchpad to tune it.</p>;
 
@@ -194,30 +197,35 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
         <div className="flex flex-col gap-1.5">
             {modeOn && <TouchpadModeControl value={modeValue} onChange={(m) => modeChange.change(m, modeValue)} />}
             {modeChange.confirm}
-            {/* Always laid out, shown only in touchpad mode: the controls never move when the mode is learned. */}
-            <p className={cn("min-h-5 text-sm text-muted-foreground", osMode ? "" : "invisible")} aria-hidden={!osMode} data-os-mode-note>
-                Windows or Linux decides taps and scrolling in this mode, so use the system touchpad settings{windows ? " (Settings > Bluetooth & devices > Touchpad)" : ""}.
-            </p>
+            {/* Always laid out, shown only in touchpad mode: the controls never move when the mode is learned.
+                A write the board didn't take says so in the same line. */}
+            {error ? (
+                <p className="min-h-5 text-sm text-kb-touch-cancel" role="alert" data-write-error>{error}</p>
+            ) : (
+                <p className={cn("min-h-5 text-sm text-muted-foreground", osMode ? "" : "invisible")} aria-hidden={!osMode} data-os-mode-note>
+                    Windows or Linux decides taps and scrolling in this mode, so use the system touchpad settings{windows ? " (Settings > Bluetooth & devices > Touchpad)" : ""}.
+                </p>
+            )}
             <div className={cn("grid gap-2 @lg:grid-cols-2", palmOn ? "@5xl:grid-cols-5" : "@5xl:grid-cols-4")} data-tuning-controls data-os-mode={osMode || undefined}>
                 {/* The chip's gesture settings do nothing in touchpad mode: hidden then, their space kept empty. */}
                 <ChipOnly hidden={osMode}>
-                    <StepControl label="Dead zone" value={deadZone} table={PAD_DEAD_ZONE_MM100} format={formatMm} onChange={(v) => setValue(PAD_DEAD_ZONE_KEY, v)}
+                    <StepControl label="Dead zone" value={deadZone} table={PAD_DEAD_ZONE_MM100} format={formatMm} onChange={(v) => setNow(PAD_DEAD_ZONE_KEY, v)}
                         note="How far a finger can move before a tap or a hold is canceled." />
                 </ChipOnly>
                 <ChipOnly hidden={osMode}>
-                    <StepControl label="Tap time" value={tapMs} table={PAD_TAP_MS} format={(v) => `${v} ms`} onChange={(v) => setValue(PAD_TAP_MS_KEY, v)}
+                    <StepControl label="Tap time" value={tapMs} table={PAD_TAP_MS} format={(v) => `${v} ms`} onChange={(v) => setNow(PAD_TAP_MS_KEY, v)}
                         note="A tap must lift within this." />
                 </ChipOnly>
                 <ChipOnly hidden={osMode}>
-                    <StepControl label="Hold time" value={holdMs} table={PAD_HOLD_MS} format={(v) => `${v} ms`} onChange={(v) => setValue(PAD_HOLD_MS_KEY, v)} disabled={!holdOn}
+                    <StepControl label="Hold time" value={holdMs} table={PAD_HOLD_MS} format={(v) => `${v} ms`} onChange={(v) => setNow(PAD_HOLD_MS_KEY, v)} disabled={!holdOn}
                         note={holdOn ? `Press and hold clicks after the tap time plus this: ${tapMs + holdMs} ms.` : "Press and Hold to Drag is off in Pointing Devices."} />
                 </ChipOnly>
                 <ChipOnly hidden={osMode}>
-                    <StepControl label="Scroll start" value={scroll} table={scrollTable} format={formatMm} onChange={(v) => setValue(PAD_SCROLL_KEY, v)}
+                    <StepControl label="Scroll start" value={scroll} table={scrollTable} format={formatMm} onChange={(v) => setNow(PAD_SCROLL_KEY, v)}
                         note="How far two fingers move, on average, before they scroll." />
                 </ChipOnly>
                 {palmOn && (
-                    <StepControl label="Palm rejection" value={palmValue} table={palmTable} format={formatPalm} onChange={(v) => setValue(PAD_PALM_KEY, v)}
+                    <StepControl label="Palm rejection" value={palmValue} table={palmTable} format={formatPalm} onChange={(v) => setNow(PAD_PALM_KEY, v)}
                         note="A contact larger than this, in the pad's channels, is a palm and is ignored." />
                 )}
             </div>
