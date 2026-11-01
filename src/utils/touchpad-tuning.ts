@@ -28,6 +28,14 @@ export const PAD_MODE_BUILTIN = 1;
 export const PAD_MODE_LABELS = ["Automatic", "Built-in gestures"] as const;
 export const SVIL_FLAG4_PAD_MODE = 0x02;
 export const hasPadMode = (flags4: number | undefined | null): boolean => ((flags4 ?? 0) & SVIL_FLAG4_PAD_MODE) !== 0;
+/**
+ * Board values that belong to the computer the board is plugged into, not to
+ * the layout: never exported to a .svil and never imported from one. The
+ * touchpad mode is chosen per computer (touchpad mode on Windows and Linux,
+ * built-in gestures for a Mac or by choice), and switching it on import would
+ * skip its confirmation.
+ */
+export const NOT_LAYOUT_VALUES: readonly string[] = [PAD_MODE_KEY];
 /** VIA value 58 (GET_INFO byte 21 bit 0): the palm rejection, an area in the chip's channels; 0 off. */
 export const PAD_PALM_KEY = "id_pad_palm";
 export const PAD_TUNING_KEYS = [PAD_DEAD_ZONE_KEY, PAD_TAP_MS_KEY, PAD_SCROLL_KEY, PAD_PALM_KEY] as const;

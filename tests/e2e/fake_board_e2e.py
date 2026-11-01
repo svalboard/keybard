@@ -83,11 +83,21 @@ def app_url():
             raise RuntimeError(f"vite preview did not start at {url}")
         yield url
     finally:
+        stop_server(server)
+
+
+def stop_server(server: subprocess.Popen) -> None:
+    """Stop vite preview and everything it started. On Windows the process is
+    npx (via cmd), and terminating it leaves node and esbuild running, so the
+    whole tree goes with taskkill."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(server.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
         server.terminate()
-        try:
-            server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            server.kill()
+    try:
+        server.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        server.kill()
 
 
 def open_board(browser, url: str, board: str = "fakeBoard"):

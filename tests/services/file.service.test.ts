@@ -28,6 +28,17 @@ const createLargeFile = (): File => {
 };
 
 describe('FileService', () => {
+  it('leaves the touchpad mode out of an export (a per-computer choice, not layout)', () => {
+    const kb = { rows: 1, cols: 1, layers: 1, keymap: [[4]], custom_values: [
+      { key: 'id_pad_touchpad_mode', channel: 0, valueId: 59, data: [1] },
+      { key: 'id_pad_tap', channel: 0, valueId: 51, data: [1] },
+    ] } as never;
+    const svil = JSON.parse(fileService.kbinfoToSvil(kb));
+    const keys = (svil.custom_values ?? []).map((v: { key: string }) => v.key);
+    expect(keys).toContain('id_pad_tap');
+    expect(keys).not.toContain('id_pad_touchpad_mode');
+  });
+
   it('preserves the renamed Python GUI protocol version', () => {
     const result = fileService.parseContent(JSON.stringify({
       uid: 12345, sval_protocol: 3, layout: [[['KC_A']]],

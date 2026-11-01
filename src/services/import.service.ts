@@ -6,6 +6,7 @@ import { LabelService } from "./label.service";
 import { usbInstance } from "./usb.service";
 import { keyService } from "./key.service";
 import { NO_SELECTION } from "./fragment.service";
+import { NOT_LAYOUT_VALUES } from "../utils/touchpad-tuning";
 
 /** A keycode as the firmware stores it: entries read from a file hold names, the board's hold names or numbers. */
 const kc = (value: unknown): number => typeof value === "string" ? keyService.parse(value) : Number(value ?? 0);
@@ -241,6 +242,8 @@ export class ImportService {
             const channelsToSave = new Set<number>();
 
             for (const entry of newKb.custom_values) {
+                // Per-computer board values (the touchpad mode) are never imported: they aren't layout.
+                if (NOT_LAYOUT_VALUES.includes(entry.key)) continue;
                 const menuEntry = menuRefMap.get(entry.key);
                 if (!menuEntry) {
                     console.warn(`[Import] Custom value key "${entry.key}" not found in connected keyboard menus, skipping`);

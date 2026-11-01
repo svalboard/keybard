@@ -27,7 +27,7 @@ export function pointingMenuIndex(menus: CustomUIMenuItem[] | undefined): number
  */
 export function useMenuValues(menu: CustomUIMenuItem | undefined) {
     const { keyboard, setKeyboard, applyBoardState, isConnected } = useKeyboard();
-    const { queue } = useChanges();
+    const { queue, clear } = useChanges();
     const [values, setValues] = useState<Map<string, number>>(new Map());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -65,61 +65,75 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
         const found = find(key);
         if (!found) { setError(`Unknown setting: ${key}`); return false; }
         const writes = timingWrites(key, value, customValueService.getCache()).filter(([k]) => find(k));
-        const store = (pairs: [string, number][]) => {
-            setValues(prev => {
-                const next = new Map(prev);
-                for (const [k, v] of pairs) next.set(k, v);
-                return next;
-            });
-            const patch = (current: KeyboardInfo): KeyboardInfo => {
-                const entries = [...(current.custom_values ?? [])];
-                for (const [k, v] of pairs) {
-                    const f = find(k);
-                    if (!f) continue;
-                    const index = entries.findIndex(entry => entry.key === k);
-                    const entry = { key: k, channel: f.ref.channel, valueId: f.ref.valueId, data: customValueService.intToBytes(v, customValueService.getByteWidth(f.item)) };
-                    if (index >= 0) entries[index] = { ...entries[index], ...entry };
-                    else entries.push(entry);
-                }
-                return { ...current, custom_values: entries };
-            };
-            if (opts?.now) applyBoardState(patch);
-            else setKeyboard(current => current ? patch(current) : current);
+        const show = (pairs: [string, number][]) => setValues(prev => {
+            const next = new Map(prev);
+            for (const [k, v] of pairs) next.set(k, v);
+            return next;
+        });
+        const patchFor = (pairs: [string, number][]) => (current: KeyboardInfo): KeyboardInfo => {
+            const entries = [...(current.custom_values ?? [])];
+            for (const [k, v] of pairs) {
+                const f = find(k);
+                if (!f) continue;
+                const index = entries.findIndex(entry => entry.key === k);
+                const entry = { key: k, channel: f.ref.channel, valueId: f.ref.valueId, data: customValueService.intToBytes(v, customValueService.getByteWidth(f.item)) };
+                if (index >= 0) entries[index] = { ...entries[index], ...entry };
+                else entries.push(entry);
+            }
+            return { ...current, custom_values: entries };
         };
-        store(writes);
-        const write = async () => {
-            for (const [k, v] of writes) await customValueService.setValue(k, v, [menu]);
-            await customValueService.save(found.ref.channel);
+        // An edit: the draft, written by the change queue (Live Updating or Apply).
+        const storeDraft = (pairs: [string, number][]) => { show(pairs); setKeyboard(current => current ? patchFor(pairs)(current) : current); };
+        // Board state: only what the board said it has (a read-back), in the draft and the loaded copy alike.
+        const storeBoard = (pairs: [string, number][]) => { show(pairs); applyBoardState(patchFor(pairs)); };
+        const readBack = async (keys: string[]) => {
             const back: [string, number][] = [];
-            for (const k of opts?.now ? [...new Set([key, ...readBackKeys(key)])] : readBackKeys(key)) {
+            for (const k of keys) {
                 const f = find(k);
                 if (!f) continue;
                 const v = await customValueService.get(f.ref.channel, f.ref.valueId, customValueService.getByteWidth(f.item));
                 customValueService.setCached(k, v);
                 back.push([k, v]);
             }
-            if (back.length) store(back);
+            return back;
+        };
+        const send = async () => {
+            for (const [k, v] of writes) await customValueService.setValue(k, v, [menu]);
+            await customValueService.save(found.ref.channel);
         };
         if (!opts?.now) {
-            await queue(`Setting ${key}`, write, { type: "custom_ui", writeKey: `custom:${key}` });
+            storeDraft(writes);
+            await queue(`Setting ${key}`, async () => {
+                await send();
+                const back = await readBack(readBackKeys(key));
+                if (back.length) storeDraft(back);
+            }, { type: "custom_ui", writeKey: `custom:${key}` });
             return true;
         }
+        // At once. A change for the same setting still waiting in the queue (Manual Updates) would
+        // overwrite this one at Apply: it goes, so the board keeps the value chosen last.
+        for (const [k] of writes) clear(`custom:${k}`);
+        const keys = [...new Set([...writes.map(([k]) => k), ...readBackKeys(key)])];
+        const before: [string, number][] = keys.map(k => [k, customValueService.getCache().get(k) ?? 0]);
+        setWriteError(null);
+        show(writes); // shown at once; board state only from the read-back below
         try {
-            setWriteError(null);
-            await write();
+            await send();
+            storeBoard(await readBack(keys));
             return true;
         } catch (err) {
-            // Show what the board has, not the value that didn't land.
-            const f = found;
+            // Show what the board has, not the value that didn't land; if the board doesn't
+            // answer either, what was shown before (board state never took the new value).
             try {
-                const v = await customValueService.get(f.ref.channel, f.ref.valueId, customValueService.getByteWidth(f.item));
-                customValueService.setCached(key, v);
-                store([[key, v]]);
-            } catch { /* the board isn't answering: keep the shown value */ }
-            setWriteError(`The board didn't take ${f.item.label ?? key}: ${err instanceof Error ? err.message : String(err)}`);
+                storeBoard(await readBack(keys));
+            } catch {
+                for (const [k, v] of before) customValueService.setCached(k, v);
+                show(before);
+            }
+            setWriteError(`The board didn't take ${found.item.label ?? key}: ${err instanceof Error ? err.message : String(err)}`);
             return false;
         }
-    }, [menu, isConnected, queue, keyboard, setKeyboard, applyBoardState]);
+    }, [menu, isConnected, queue, clear, keyboard, setKeyboard, applyBoardState]);
 
     return { values, setValue, loading, error, writeError };
 }

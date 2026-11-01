@@ -57,6 +57,9 @@ the chip's tap and press-and-hold rules. Run with
      already on the board.
  17. v4.3.4 firmware (?fakeBoard=touchpad-434): no mode control, no palm
      rejection, the fingers page never read, the dialog works as before.
+ 18. Manual Updates: a Hold Time change queued in Pointing Devices, then
+     the dialog's Hold time written at once: the queued change goes, and
+     the board keeps the dialog's value after Apply.
 
 Flows 1-11 use ?fakeBoard=touchpad-gestures, where the chip's settings apply.
 
@@ -65,6 +68,7 @@ flows pass both ways. E2E_URL and E2E_SKIP_BUILD work as in fake_board_e2e.py. S
 screenshots. Needs Python Playwright with Chromium. Exits 1 when a check fails.
 """
 import os
+import re
 import sys
 import time
 
@@ -600,6 +604,16 @@ def flow_errors_and_halves(browser, url):
     page.locator("[data-pad] [data-palm]").first.wait_for(state="attached", timeout=30000)  # the resting palm, over 4 channels
     press_slider(page, "Palm rejection", "ArrowLeft", 1)
     page.wait_for_function("window.keybardFakeBoard.device.firmware.padPalm === 0", timeout=5000)
+    # The write and the read-back both fail (the cable drops): the old value comes back, the
+    # error stays, and nothing claims the board has the new value (no unsaved edit either).
+    page.evaluate("""() => { const d = window.keybardFakeBoard.device; const send = d.sendReport.bind(d); let left = 2;
+        d.sendReport = async (id, data) => { const b = new Uint8Array(data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
+            if (left > 0 && b[5] === 0xfe && (b[6] === 0x07 || b[6] === 0x08) && b[8] === 58) { left--; throw new Error('simulated write failure'); }
+            return send(id, data); }; }""")
+    press_slider(page, "Palm rejection", "ArrowRight", 1)
+    expect(page.locator("[data-write-error]")).to_be_visible(timeout=5000)
+    expect(page.locator("[data-step='Palm rejection'] [data-step-value]")).to_have_text("Off", timeout=5000)
+    assert page.evaluate("window.keybardFakeBoard.device.firmware.padPalm") == 0
     # The left half stops answering: shown as gone after about a second; the right pad and the mode carry on.
     first = page.evaluate(BOXES_JS)
     page.evaluate("window.keybardFakeBoard.device.firmware.leftMissing = true")
@@ -632,6 +646,42 @@ def flow_old_firmware(browser, url):
     expect(page.get_by_role("button", name=LINK)).to_be_visible(timeout=15000)
     assert page.get_by_role("combobox", name="Touchpad Mode").count() == 0, "a mode dropdown on firmware without it"
     assert not errors2, errors2
+    context.close()
+
+
+def hold_writes(page: Page) -> list:
+    return page.evaluate("window.keybardFakeBoard.device.firmware.customWrites.filter(w => w.id === 54).map(w => w.value[0] | (w.value[1] << 8))")
+
+
+def flow_queued_then_dialog(browser, url):
+    """Manual Updates: a Hold Time change waiting in the queue (Pointing Devices),
+    then the dialog's own Hold time, written at once. The queued change goes, so
+    Apply can't put the older value back on the board."""
+    context, page, errors = open_page(browser, url, "panel=pointing", init=MANUAL_UPDATES)
+    hold = page.get_by_role("slider", name="Hold Time (ms)")
+    expect(hold).to_be_visible(timeout=15000)
+    hold.focus()
+    hold.press("End")  # 1500 ms, queued
+    page.wait_for_function(PENDING_JS, timeout=5000)
+    assert hold_writes(page) == [], "the queued change was written"
+    page.get_by_role("button", name=LINK).click()
+    dialog = page.get_by_role("dialog", name=TITLE)
+    expect(dialog).to_be_visible(timeout=5000)
+    step = page.get_by_role("slider", name="Hold time")
+    step.focus()
+    step.press("Home")  # 20 ms, at once
+    page.wait_for_function("((window.keybardFakeBoard.device.firmware.padSetting >> 3) & 15) === 1", timeout=5000)  # 20 ms
+    page.wait_for_timeout(400)
+    assert not page.evaluate(PENDING_JS), "the older queued Hold Time is still waiting to overwrite the dialog's"
+    page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden(timeout=5000)
+    apply = page.get_by_role("button", name=re.compile(r"^Apply \d+ Change"))
+    if apply.count():
+        apply.first.click()
+        page.wait_for_timeout(800)
+    assert ((page.evaluate("window.keybardFakeBoard.device.firmware.padSetting") >> 3) & 15) == 1, f"the board ended at another hold time: writes {hold_writes(page)}"
+    assert hold_writes(page) == [20], f"hold time writes {hold_writes(page)}"
+    assert not errors, errors
     context.close()
 
 
@@ -726,6 +776,7 @@ def main() -> int:
         ("15. the mode switch writes at once with Manual Updates: no pending change, read back, the UI stays (both entries)", flow_mode_immediate),
         ("16. a failed write says so and shows the board's value; palm live; a missing half; no leave-page prompt", flow_errors_and_halves),
         ("17. v4.3.4 firmware: no mode, no palm, no fingers page read; works as before", flow_old_firmware),
+        ("18. Manual Updates: a queued Hold Time, then the dialog's written at once; Apply can't overwrite it", flow_queued_then_dialog),
     ]
     only = os.environ.get("E2E_ONLY")
     if only:
