@@ -86,9 +86,10 @@ const NO_PAD: PadLive = { block: EMPTY_BLOCK, events: 0, trail: [], outcomes: []
 interface LiveState {
     report: PadTouchReport | null;
     /**
-     * Every pad that answered was in touchpad mode at the last report where
-     * any did: a report with no valid pad (a fresh start, a missed split read)
-     * keeps the last answer, so the mode never blinks.
+     * The pads are in touchpad mode: the mode is the board's, one for both
+     * pads, so any pad that answered saying so decides it (the other pad's
+     * flag can drop for a few reports while the split link catches up), and
+     * a report with no valid pad keeps the last answer. Nothing blinks.
      */
     padsOs: boolean;
     readAt: number;
@@ -114,13 +115,15 @@ function useLiveTouch(enabled: boolean, keyboard: KeyboardInfo | null | undefine
         const unsubscribe = service.subscribe((report, at) => {
             setLive((prev) => {
                 const valid = [report.left, report.right].filter((b) => b.valid);
-                const padsOs = valid.length ? valid.every((b) => b.os) : prev.padsOs;
+                const padsOs = valid.length ? valid.some((b) => b.os) : prev.padsOs;
                 const next: LiveState = { report, readAt: at, padsOs, left: prev.left, right: prev.right };
                 for (const side of ["left", "right"] as const) {
                     const t = trackers.current[side];
-                    const done = t.take(report[side], report, report.fingers?.[side] ?? null, report.fingers?.palm ?? 0);
+                    // Each pad's touch is read in the board's one mode (padsOs), not its own flag.
+                    const block = report[side].valid ? { ...report[side], os: padsOs } : report[side];
+                    const done = t.take(block, report, report.fingers?.[side] ?? null, report.fingers?.palm ?? 0);
                     next[side] = {
-                        block: report[side],
+                        block,
                         events: t.touchEvents,
                         trail: t.trail,
                         outcomes: done ? [done, ...prev[side].outcomes].slice(0, OUTCOMES) : prev[side].outcomes,
@@ -230,7 +233,7 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
                     <PadView side={side} block={live[side].block} readAt={live.readAt} touchEvents={live[side].events} trail={live[side].trail} count={live[side].count} timing={timing}
                         contactR={r ? contactRadius(live[side].block.area, r) : 0}
                         outcomes={live[side].outcomes} fingers={live[side].fingers} touch={live[side].touch} twoTrail={live[side].twoTrail}
-                        radiusOf={(area) => (r ? contactRadius(area, r) : 0)} palm={palm} />
+                        radiusOf={(area) => (r ? contactRadius(area, r) : 0)} palm={palm} touchpadMode={osMode} />
                 </div>
             ))}
         </div>

@@ -496,12 +496,14 @@ def flow_mode_immediate(browser, url):
         expect(page.locator("[data-os-mode-note]")).to_be_visible(timeout=15000)
         assert page.evaluate("JSON.parse(localStorage.getItem('keyboard-settings') || '{}')['live-updating']") is False, "Manual Updates didn't take"
         page.locator("[data-pad-svg]").nth(1).wait_for(timeout=15000)
-        # Automatic: a report with no valid pad now and then must not blink the settings in.
-        page.evaluate("window.keybardFakeBoard.device.firmware.invalidFrameEvery = 3")
+        # Automatic: a report with no valid pad, or with the left pad's touchpad flag dropped
+        # for a moment (the real board's other half, seen on the touch test board), must not
+        # blink the settings in.
+        page.evaluate("window.keybardFakeBoard.device.firmware.invalidFrameEvery = 3; window.keybardFakeBoard.device.firmware.leftOsDropEvery = 4")
         blinks = page.evaluate("""async () => { let n = 0; for (let i = 0; i < 15; i++) { await new Promise(r => setTimeout(r, 100));
             if ([...document.querySelectorAll("[role='slider']")].some(e => e.getAttribute('aria-label') === 'Dead zone' && !e.closest('[aria-hidden="true"]'))) n++; } return n; }""")
         assert blinks == 0, f"{query}: the gesture settings blinked in {blinks} times in Automatic"
-        page.evaluate("window.keybardFakeBoard.device.firmware.invalidFrameEvery = 0")
+        page.evaluate("window.keybardFakeBoard.device.firmware.invalidFrameEvery = 0; window.keybardFakeBoard.device.firmware.leftOsDropEvery = 0")
         first = page.evaluate(BOXES_JS)
         page.get_by_role("radio", name="Built-in gestures").click()
         page.get_by_role("dialog", name="Use built-in gestures?").get_by_role("button", name="Use built-in gestures").click()

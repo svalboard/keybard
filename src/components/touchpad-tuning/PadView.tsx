@@ -40,6 +40,8 @@ interface PadViewProps {
     radiusOf: (area: number) => number;
     /** The palm rejection threshold in force, channels; 0 off. */
     palm: number;
+    /** The board is in touchpad mode (one mode for both pads, TouchpadTuning). */
+    touchpadMode: boolean;
 }
 
 /** The close-up's size on screen, CSS px: phones, and wider screens (Tailwind sm). */
@@ -89,7 +91,7 @@ const WORDS = ["no", "one", "two", "three", "four", "five"];
  * the active gesture's guides show, faint once it has resolved. Redraws per
  * frame only while a finger is down, and only the timer.
  */
-export function PadView({ side, block, readAt, touchEvents, trail, timing, outcomes, count, contactR, fingers, touch, twoTrail, radiusOf, palm }: PadViewProps) {
+export function PadView({ side, block, readAt, touchEvents, trail, timing, outcomes, count, contactR, fingers, touch, twoTrail, radiusOf, palm, touchpadMode }: PadViewProps) {
     const progressRef = useRef<SVGPathElement>(null);
     const msRef = useRef<HTMLSpanElement>(null);
     // Strength has no fixed scale (it follows the pad's sensitivity): shade against the strongest touch seen.
@@ -98,7 +100,7 @@ export function PadView({ side, block, readAt, touchEvents, trail, timing, outco
     const press = block.strength ? 0.15 + 0.35 * Math.min(1, block.strength / strongest.current) : 0.2;
 
     // Touchpad mode: the computer makes the gestures, so this pad shows contacts, palms and counts only.
-    const osPad = block.os;
+    const osPad = touchpadMode;
     const multi = fingers.valid;
     const peak = Math.max(touch?.maxFingers ?? 0, multi ? fingers.fingers.length : block.fingers);
     const gesture: "one" | "two" | "many" | "os" = osPad ? "os" : touch?.hadTwo && peak <= 2 ? "two" : peak >= 3 ? "many" : peak === 2 && !multi ? "two" : "one";
@@ -294,7 +296,7 @@ export function PadView({ side, block, readAt, touchEvents, trail, timing, outco
                             <figcaption className="truncate text-xs text-muted-foreground" data-close-caption>{caption}</figcaption>
                         </figure>
                     </div>
-                    <p className={"h-8 shrink-0 overflow-hidden text-xs text-muted-foreground" + (block.os ? "" : " invisible")} aria-hidden={!block.os} data-pad-os>
+                    <p className={"h-8 shrink-0 overflow-hidden text-xs text-muted-foreground" + (osPad ? "" : " invisible")} aria-hidden={!osPad} data-pad-os>
                         Touchpad mode on this pad: the list shows each touch's fingers and palms.
                     </p>
                     <ol className="flex h-44 shrink-0 flex-col gap-0.5 overflow-y-auto sm:h-auto sm:min-h-44 sm:flex-1 rounded-md border border-kb-gray-border px-2 py-1.5 text-xs" aria-label={`${label}: last touches, newest first`} tabIndex={0} data-outcomes>

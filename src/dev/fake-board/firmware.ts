@@ -218,6 +218,8 @@ export class FakeSvalFirmware {
     padMode = 0;
     /** Tests: every this-many touch page reads, a report with no valid pad (a fresh start, a missed split read). */
     invalidFrameEvery = 0;
+    /** Tests: every this-many reads, the left pad valid but without its touchpad flag, as the real board's other half shows for a few reports while its split link catches up. */
+    leftOsDropEvery = 0;
     private touchReads = 0;
     /** The pads are a touchpad now: the computer asks, and the mode lets it (the touch pages' OS bits, 0x2C bit 4). */
     get padsOs(): boolean {
@@ -834,8 +836,10 @@ export class FakeSvalFirmware {
     /** The touch page of 0x2D (docs/protocol.md "Touchpad touch"), from the scripted touches. */
     private touchPage(out: Uint8Array): void {
         const now = this.now() * this.touchSpeed;
-        const blank = this.invalidFrameEvery > 0 && ++this.touchReads % this.invalidFrameEvery === 0;
-        const blocks = this.padModels(now).map((m) => ({ ...m.read(now), os: this.padsOs, ...(blank ? { valid: false } : {}) }));
+        this.touchReads++;
+        const blank = this.invalidFrameEvery > 0 && this.touchReads % this.invalidFrameEvery === 0;
+        const drop = this.leftOsDropEvery > 0 && this.touchReads % this.leftOsDropEvery === 1;
+        const blocks = this.padModels(now).map((m, i) => ({ ...m.read(now), os: this.padsOs && !(i === 0 && drop), ...(blank ? { valid: false } : {}) }));
         const c = this.chipSettings();
         out.set(packPadTouch({
             tapOn: c.tapOn, twoFingerOn: c.twoFingerOn, holdOn: c.holdOn, elapsedMs: 0,
