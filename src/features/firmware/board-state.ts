@@ -6,7 +6,7 @@
 
 import { customValueService } from "@/services/custom-value.service";
 import type { KeyboardInfo } from "@/types/keyboard.types";
-import { PAD_MODE_KEY } from "@/utils/touchpad-tuning";
+import { PAD_MODE_KEY, PAD_MODE_LABELS } from "@/utils/touchpad-tuning";
 
 /** The .svil field the pre-update backup adds. */
 export const BOARD_STATE_FIELD = "board_state";
@@ -46,6 +46,18 @@ export function boardStateFromSvil(svil: string): BoardState | null {
     }
 }
 
+/** The layout is back; the touchpad mode isn't. The update's sheet says so (F24). */
+export class TouchpadModeNotRestored extends Error {
+    readonly name = "TouchpadModeNotRestored";
+    /** What to do, for the sheet under its title. */
+    readonly hint: string;
+    constructor(readonly mode: number, readonly reason: string) {
+        const hint = `It was ${PAD_MODE_LABELS[mode] ?? mode} before the update. Set it again in Settings → Touchpad tuning.`;
+        super(`Your layout is back, but not Touchpad mode. ${hint}`);
+        this.hint = hint;
+    }
+}
+
 export interface BoardStateTarget {
     keyboard: KeyboardInfo;
     /** Board state into the draft and the loaded copy alike (KeyboardContext.applyBoardState). */
@@ -77,7 +89,7 @@ export async function restoreBoardState(state: BoardState | null, t: BoardStateT
         }));
         if (back !== mode) throw new Error(`the board reads ${back}`);
     } catch (error) {
-        throw new Error(`The layout is back, but Touchpad mode couldn't be put back: ${error instanceof Error ? error.message : String(error)}`);
+        throw new TouchpadModeNotRestored(mode, error instanceof Error ? error.message : String(error));
     }
     if (t.readPointing) {
         const probe: KeyboardInfo = { ...t.keyboard };

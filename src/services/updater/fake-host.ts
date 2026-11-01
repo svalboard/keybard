@@ -1,6 +1,7 @@
 // The flow's host over FakeSvalboard: the mock board's restarts, its storage flags,
 // and a stand-in for putting the layout back. Used by the tests and the harness.
 
+import { TouchpadModeNotRestored } from "@/features/firmware/board-state";
 import { FakeSvalboard, type Fault, type FakeHalfConfig, type FakeTiming } from "./fake-board";
 import { FakeSides, type FakeSidesOptions } from "./fake-sides";
 import type { SideHost } from "../side-host";
@@ -12,6 +13,8 @@ import { ReplyTimeoutError, type Clock, type UpdaterTransport } from "./transpor
 
 export interface FakeHostOptions {
     restoreFails?: boolean;
+    /** The layout goes back, but the board won't take the touchpad mode (F24). */
+    modeRestoreFails?: boolean;
     trimmed?: string[];
 }
 
@@ -61,6 +64,7 @@ export class FakeHost implements FlowHost {
         this.restores++;
         this.events.push("restore");
         if (this.o.restoreFails) throw new Error("The keyboard stopped answering while the layout was written.");
+        if (this.o.modeRestoreFails) throw new TouchpadModeNotRestored(1, "the board reads 0");
         this.board.restoreSettings();
         return { trimmed: this.o.trimmed ?? [] };
     }

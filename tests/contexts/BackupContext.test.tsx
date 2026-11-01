@@ -113,11 +113,13 @@ describe('combo names on connect', () => {
         // Combo 1 was changed on another computer since that backup.
         state.isConnected = true; state.keyboard = withCombos('KC_TAB'); state.session = 2;
         render(ui());
-        await settle();
-        expect(state.keyboard?.cosmetic?.combos).toEqual({ '0': 'Dictation' });
-        const [latest] = await service.listSnapshots();
-        expect(latest.kind).toBe('connected');
-        expect(JSON.parse(await service.getSvil(latest.id)).cosmetic.combos).toEqual({ '0': 'Dictation' });
+        // Wait for the restore and the connected snapshot, not a fixed time (slow under a full run).
+        await vi.waitFor(async () => {
+            expect(state.keyboard?.cosmetic?.combos).toEqual({ '0': 'Dictation' });
+            const [latest] = await service.listSnapshots();
+            expect(latest.kind).toBe('connected');
+            expect(JSON.parse(await service.getSvil(latest.id)).cosmetic.combos).toEqual({ '0': 'Dictation' });
+        }, { timeout: 5000, interval: 25 });
     });
 
     it('changes nothing when the backup has no combo names', async () => {

@@ -43,7 +43,7 @@ export type Step =
     | "self-arm" | "self-erase" | "self-send" | "self-verify" | "self-install" | "reconnect" | "sides" | "check-halves"
     | "settings-reset" | "restore" | "done" | "failed";
 
-export type FailureId = "F2" | "F3" | "F4" | "F5" | "F6" | "F9" | "F10" | "F11" | "F12" | "F14" | "F16" | "F17" | "F18" | "F19" | "F20" | "F21" | "F22" | "F23";
+export type FailureId = "F2" | "F3" | "F4" | "F5" | "F6" | "F9" | "F10" | "F11" | "F12" | "F14" | "F16" | "F17" | "F18" | "F19" | "F20" | "F21" | "F22" | "F23" | "F24";
 
 export interface Failure {
     id: FailureId;
@@ -1026,6 +1026,14 @@ export class UpdateFlow {
                 trimmed = report.trimmed;
                 notes = { replaced: report.replaced ?? [], unavailable: report.unavailable ?? [] };
             } catch (error) {
+                // The layout is back and only the touchpad mode isn't: the update is done, so the
+                // reset notice is cleared, and the sheet says where to set the mode.
+                if (error instanceof Error && error.name === "TouchpadModeNotRestored") {
+                    await this.host.clearStorageReset();
+                    this.update({ sent2A: true });
+                    for (const r of this.state.rows) this.row(r.hand, { stage: "done", progress: 1 });
+                    throw new Stop({ id: "F24", detail: (error as Error & { hint?: string }).hint ?? error.message });
+                }
                 throw new Stop({ id: "F16", detail: error instanceof Error ? error.message : String(error) });
             }
         } else if (this.state.afterwards === "blank") {

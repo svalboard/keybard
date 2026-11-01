@@ -133,7 +133,7 @@ describe('the restore of other backups', () => {
         const after = board(PAD_MODE_AUTO, 0);
         const ed = editor(after);
         const ch = changes(true);
-        await expect(restoreLayoutToBoard(svil, { keyboard: after, ...ed, queue: ch.queue, commit: ch.commit })).rejects.toThrow(/Touchpad mode couldn't be put back/);
+        await expect(restoreLayoutToBoard(svil, { keyboard: after, ...ed, queue: ch.queue, commit: ch.commit })).rejects.toThrow(/Your layout is back, but not Touchpad mode. It was Built-in gestures before the update/);
         expect(modeOf(ed.e.draft)).toBe(PAD_MODE_AUTO);
         expect(modeOf(ed.e.loaded)).toBe(PAD_MODE_AUTO);
     });

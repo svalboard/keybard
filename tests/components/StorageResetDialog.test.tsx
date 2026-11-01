@@ -6,7 +6,7 @@ import { fingerprintSvil } from '../../src/services/backup/codec';
 import type { SnapshotMeta } from '../../src/services/backup/backup.service';
 import { noteResetNoticeCleared, sessionFlowStore } from '../../src/services/updater/flow';
 
-const keyboardContext = vi.hoisted(() => ({ isConnected: true, connectionSessionId: 1, keyboard: { kbid: 'abc', storage_reset: true } as Record<string, unknown>, setKeyboard: vi.fn() }));
+const keyboardContext = vi.hoisted(() => ({ isConnected: true, connectionSessionId: 1, keyboard: { kbid: 'abc', storage_reset: true } as Record<string, unknown>, setKeyboard: vi.fn(), applyBoardState: vi.fn() }));
 vi.mock('@/contexts/KeyboardContext', () => ({ useKeyboard: () => keyboardContext }));
 const svc = vi.hoisted(() => ({ clearStorageReset: vi.fn() }));
 vi.mock('@/services/keyboard.service', () => ({ keyboardService: svc }));
@@ -191,6 +191,28 @@ describe('StorageResetDialog', () => {
             expect(await screen.findByText(/^Backup( of Kip)? saved before the update, today/)).toBeTruthy();
             fireEvent.click(screen.getByRole('button', { name: 'Restore my layout' }));
             await waitFor(() => expect(backupService.getSvil).toHaveBeenCalledWith('this-morning'));
+        });
+
+        it("puts the touchpad mode back only from this install's backup, not from an update weeks ago", async () => {
+            // Weeks ago: an update with Built-in gestures, the default layout kept, then the mode
+            // switched to Automatic. Now a reset offers that old pre-update backup: its layout
+            // comes back, its mode doesn't.
+            keyboardContext.keyboard = { kbid: 'abc', storage_build_reset: true };
+            backups.snapshots = [meta('weeks-ago', 'sval:1', 21 * DAY, 'pre-update', { fromTag: 'x4.1', toTag: 'x4.2' })];
+            const { unmount } = render(<StorageResetDialog />);
+            fireEvent.click(await screen.findByRole('button', { name: 'Restore my layout' }));
+            await waitFor(() => expect(restore.restoreLayoutToBoard).toHaveBeenCalledTimes(1));
+            expect(backupService.getSvil).toHaveBeenCalledWith('weeks-ago');
+            expect(restore.restoreLayoutToBoard.mock.calls[0][1].applyBoardState).toBeUndefined();
+            unmount();
+
+            // This install's own backup (minutes old) brings the mode back too.
+            restore.restoreLayoutToBoard.mockClear();
+            backups.snapshots = [meta('this-install', 'sval:1', 20 * 60 * 1000, 'pre-update', { fromTag: 'x4.2', toTag: 'x4.3' })];
+            render(<StorageResetDialog />);
+            fireEvent.click(await screen.findByRole('button', { name: 'Restore my layout' }));
+            await waitFor(() => expect(restore.restoreLayoutToBoard).toHaveBeenCalledTimes(1));
+            expect(restore.restoreLayoutToBoard.mock.calls[0][1].applyBoardState).toBe(keyboardContext.applyBoardState);
         });
 
         it("this board's own fresh pre-update backup comes first; older pre-update backups of other boards never do", () => {

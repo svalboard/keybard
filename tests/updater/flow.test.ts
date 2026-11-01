@@ -184,6 +184,14 @@ describe("the install flow", () => {
         expect(state.sent2A).toBe(false);
     });
 
+    it("F24 the layout is back but the touchpad mode isn't: the update is done (0x2A sent), and the sheet says where to set it", async () => {
+        const { host, state } = await run({ setup: { host: { modeRestoreFails: true } } });
+        expect(state.failure?.id).toBe("F24");
+        expect(state.failure?.detail).toBe("It was Built-in gestures before the update. Set it again in Settings → Touchpad tuning.");
+        expect(host.clears).toBe(1);
+        expect(state.sent2A).toBe(true);
+    });
+
     it("F17 settings writes failing stops before the sheet", async () => {
         const { plan: p } = await plan({ setup: { half: { writesFailing: true } } });
         expect((p as PreFailure).id).toBe("F17");
