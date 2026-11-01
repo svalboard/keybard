@@ -44,10 +44,9 @@ const DynamicMenuPanel: React.FC<DynamicMenuPanelProps> = ({ menuIndex, horizont
     // Touchpad mode at connect: the chip's tap switches gray out (touchpad-taps.ts PADS_OS_KEY).
     const padsOs = padsInTouchpadMode(keyboard);
     const shownValues = useMemo(() => {
-        const v = withEffectiveTiming(values);
-        if (!padsOs) return v;
-        const out = new Map(v);
-        out.set(PADS_OS_KEY, 1);
+        // Always set: an expression over a missing value counts as true.
+        const out = new Map(withEffectiveTiming(values));
+        out.set(PADS_OS_KEY, padsOs ? 1 : 0);
         return out;
     }, [values, padsOs]);
 

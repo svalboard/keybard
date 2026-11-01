@@ -64,9 +64,11 @@ const KIND_TONE: Record<TouchOutcome["kind"], string> = {
     palm: "text-muted-foreground", multi: "text-muted-foreground",
 };
 
-function markOf(events: number, scrolled: boolean): { text: string; tone: string; cancel: boolean } | null {
+function markOf(events: number, scrolled: boolean, gesture: "one" | "two" | "many"): { text: string; tone: string; cancel: boolean } | null {
     if (events & TOUCH_EV.twoTap) return { text: "Right click", tone: "var(--kb-touch-tap)", cancel: false };
     if (scrolled) return { text: "Scroll", tone: "var(--kb-touch-tap)", cancel: false };
+    // The first finger's tap, hold and dead zone say nothing about a touch of more fingers.
+    if (gesture !== "one") return null;
     if (events & TOUCH_EV.hold) return { text: "Hold", tone: "var(--kb-touch-hold)", cancel: false };
     if (events & TOUCH_EV.tap) return { text: "Tap", tone: "var(--kb-touch-tap)", cancel: false };
     if (events & TOUCH_EV.drift) return { text: "Canceled", tone: "var(--kb-touch-cancel)", cancel: true };
@@ -130,7 +132,7 @@ export function PadView({ side, block, readAt, touchEvents, trail, timing, outco
 
     const label = side === "left" ? "Left pad" : "Right pad";
     const shown = block.valid && (block.down || block.ms > 0);
-    const mark = shown ? markOf(touchEvents, scrolled) : null;
+    const mark = shown ? markOf(touchEvents, scrolled, gesture) : null;
     const resolved = !down || !!mark;
     const guide = resolved ? RESOLVED : 1;
     const zoneTone = block.outside ? "var(--kb-touch-cancel)" : "var(--kb-touch-zone)";
@@ -277,7 +279,7 @@ export function PadView({ side, block, readAt, touchEvents, trail, timing, outco
                                         })()}
                                         {mark && !mark.cancel && <circle cx={block.x} cy={block.y} r={dz * 0.16} fill="none" stroke={mark.tone} strokeWidth={dz * 0.07} />}
                                     </>
-                                ) : (
+                                ) : shown ? null : (
                                     <circle cx={cx} cy={cy} r={ref} fill="none" stroke="var(--kb-touch-edge)" strokeWidth={ref * 0.04} />
                                 )}
                             </svg>

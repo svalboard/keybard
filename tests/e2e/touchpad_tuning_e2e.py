@@ -314,12 +314,12 @@ def flow_fingers(browser, url):
     assert left.locator("[data-two-line]").count() == 1, "no line between the two fingers"
     assert left.locator("[data-close-up='two'] [data-scroll-ring]").count() == 1, "no scroll-start ring"
     assert left.locator("[data-dead-zone]").count() == 0, "a dead zone with two fingers"
-    labels = left.locator("[data-finger-label]").all_inner_texts()
+    labels = left.locator("[data-finger-label]").all_text_contents()
     assert sorted(labels) == ["1", "2"], labels
     assert "scroll start" in left.locator("[data-close-caption]").inner_text()
     wait_fingers(page, 3, "many")
     assert left.locator("[data-scroll-ring], [data-dead-zone], [data-two-line]").count() == 0, "guides with three fingers"
-    assert sorted(left.locator("[data-finger-label]").all_inner_texts()) == ["1", "2", "3"]
+    assert sorted(left.locator("[data-finger-label]").all_text_contents()) == ["1", "2", "3"]
     left.locator("[data-outcome='right']", has_text="Two-finger tap ✓").first.wait_for(state="attached", timeout=30000)
     left.locator("[data-outcome='scroll']", has_text="started after").first.wait_for(state="attached", timeout=30000)
     left.locator("[data-outcome='multi']", has_text="Three fingers").first.wait_for(state="attached", timeout=30000)
@@ -371,7 +371,8 @@ def flow_os_mode(browser, url):
     context.close()
     context, page, errors4 = open_page(browser, url, "panel=pointing")
     expect(page.get_by_role("group", name="Tap to Click", exact=True)).to_be_visible(timeout=15000)
-    assert page.locator("[role='group'][aria-disabled]").count() == 0, "a switch grayed out as a mouse"
+    for name in ("Tap to Click", "Two-Finger Tap to Right Click", "Press and Hold to Drag"):
+        assert page.get_by_role("group", name=name, exact=True).get_attribute("aria-disabled") is None, f"{name} grayed out as a mouse"
     errors2 += errors4
     assert not errors and not errors2, errors + errors2
     context.close()
