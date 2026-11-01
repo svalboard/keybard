@@ -34,8 +34,7 @@ export const CustomUIControl: React.FC<CustomUIControlProps> = ({
 
     const valueKey = content[0] as string;
     const currentValue = values.get(valueKey) ?? 0;
-    // Any of the expressions true grays it out.
-    const disabled = [item.disabledIf ?? []].flat().some((e) => !!e && evaluateShowIf(e, values));
+    const disabled = item.disabledIf ? evaluateShowIf(item.disabledIf, values) : false;
 
     const handleChange = (value: number) => {
         onValueChange(valueKey, value);
@@ -53,7 +52,6 @@ export const CustomUIControl: React.FC<CustomUIControlProps> = ({
                     value={currentValue}
                     onChange={handleChange}
                     compact={compact}
-                    disabled={disabled}
                 />
             );
 

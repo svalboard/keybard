@@ -16,6 +16,18 @@ export const SVIL_FLAG3_PAD_TOUCH = 0x40;
 export const PAD_DEAD_ZONE_KEY = "id_pad_dead_zone";
 export const PAD_TAP_MS_KEY = "id_pad_tap_ms";
 export const PAD_SCROLL_KEY = "id_pad_scroll_start";
+/**
+ * VIA value 59 (GET_INFO byte 21 bit 1): the touchpad mode. Automatic (0, the
+ * default and what ships): a touchpad whenever Windows or Linux asks for one.
+ * Built-in gestures (1): the chip's own taps and scrolling even then, as on a
+ * Mac or in a BIOS.
+ */
+export const PAD_MODE_KEY = "id_pad_touchpad_mode";
+export const PAD_MODE_AUTO = 0;
+export const PAD_MODE_BUILTIN = 1;
+export const PAD_MODE_LABELS = ["Automatic", "Built-in gestures"] as const;
+export const SVIL_FLAG4_PAD_MODE = 0x02;
+export const hasPadMode = (flags4: number | undefined | null): boolean => ((flags4 ?? 0) & SVIL_FLAG4_PAD_MODE) !== 0;
 /** VIA value 58 (GET_INFO byte 21 bit 0): the palm rejection, an area in the chip's channels; 0 off. */
 export const PAD_PALM_KEY = "id_pad_palm";
 export const PAD_TUNING_KEYS = [PAD_DEAD_ZONE_KEY, PAD_TAP_MS_KEY, PAD_SCROLL_KEY, PAD_PALM_KEY] as const;
@@ -313,13 +325,13 @@ export const isPalm = (palm: number, area: number): boolean => palm > 0 && area 
 
 // ---------------------------------------------------------------- one touch's outcome
 
-export type TouchOutcomeKind = "tap" | "right" | "hold" | "canceled" | "late" | "short" | "moved" | "scroll" | "palm" | "multi";
+export type TouchOutcomeKind = "tap" | "right" | "hold" | "canceled" | "late" | "short" | "moved" | "scroll" | "palm" | "multi" | "touch";
 
 export interface TouchOutcome {
     kind: TouchOutcomeKind;
     /** Plain words for the list under the pad. */
     text: string;
-    /** The computer had the pad as a touchpad: the text says what the chip would have done. */
+    /** The computer had the pad as a touchpad: the text gives only the fingers (and a palm). */
     os: boolean;
     /** How long the touch lasted and how far it went from its down point. */
     ms: number;
@@ -349,33 +361,13 @@ export interface MultiTouch {
 }
 
 const COUNT = ["no", "one", "two", "three", "four", "five"];
-const fingersWord = (n: number) => `${COUNT[n] ?? n} fingers`;
+const fingersWord = (n: number) => `${COUNT[n] ?? n} finger${n === 1 ? "" : "s"}`;
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-/**
- * The same outcome, said as the chip's decision rather than a click: on a pad
- * the computer has as a touchpad, the computer makes its own taps and scrolls.
- */
-export function chipWould(text: string): string {
-    const rules: [RegExp, string][] = [
-        [/^Tap:/, "Chip would tap:"],
-        [/^Two-finger tap ✓ right click,/, "Chip would right click (two-finger tap),"],
-        [/^Right click:/, "Chip would right click:"],
-        [/^Press and hold at/, "Chip would press and hold at"],
-        [/^Two-finger scroll: started after/, "Chip would start scrolling after"],
-        [/^Scroll:/, "Chip would scroll:"],
-        [/^Canceled:/, "Chip would cancel:"],
-        [/^No click:/, "Chip wouldn't click:"],
-        [/^Two fingers, no click:/, "Chip wouldn't click or scroll:"],
-    ];
-    for (const [re, to] of rules) if (re.test(text)) return text.replace(re, to);
-    return text;
-}
 
 export function outcome(events: number, maxFingers: number, b: PadTouchBlock,
     s: Pick<PadTouchReport, "tapMs" | "holdMs" | "holdOn" | "tapOn" | "twoFingerOn">, multi?: MultiTouch): TouchOutcome {
     const base = { os: b.os, ms: b.ms, farthest: b.farthest, downX: b.downX, downY: b.downY, x: b.x, y: b.y };
-    const say = (kind: TouchOutcomeKind, text: string): TouchOutcome => ({ kind, text: b.os ? chipWould(text) : text, ...base });
+    const say = (kind: TouchOutcomeKind, text: string): TouchOutcome => ({ kind, text, ...base });
     const sec = `${b.ms} ms`;
     const moved = formatMm(b.farthest);
     const holdAt = s.tapMs + s.holdMs;
@@ -384,7 +376,9 @@ export function outcome(events: number, maxFingers: number, b: PadTouchBlock,
         const what = b.os ? "the computer ignores it" : "the pad ignored it";
         return { kind: "palm", text: `Palm: ${multi.maxArea} channels, over ${multi.palm}: ${what} (${sec})`, ...base };
     }
-    const fingers = Math.max(maxFingers, multi?.maxFingers ?? 0);
+    const fingers = Math.max(maxFingers, multi?.maxFingers ?? 0, 1);
+    // Touchpad mode: the computer makes the taps and scrolls, so a touch is its fingers and how long it lasted.
+    if (b.os) return { kind: "touch", text: `${capital(fingersWord(fingers))}, ${sec}`, ...base };
     if (multi && fingers >= 3) return say("multi", `${capital(fingersWord(fingers))}: no tap or scroll on the chip (${sec})`);
     if (multi?.twoTap || (events & TOUCH_EV.twoTap)) {
         return say("right", multi ? `Two-finger tap ✓ right click, ${sec}` : `Right click: two fingers, ${sec}`);

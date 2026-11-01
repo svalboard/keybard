@@ -15,8 +15,10 @@
  *   pause typing for the matrix tester; ?fakeBoard=turbo6 is this firmware
  *   on a board that ran turbo 6 with both scan waits at 0 before updating
  *   (its migration lands on 15 / 15 µs; it starts fresh on every load);
- *   ?fakeBoard=touchpad is this firmware with an Azoteq touchpad on each half;
- *   ?fakeBoard=touchpad-os the same, with the computer driving both pads as a touchpad.
+ *   ?fakeBoard=touchpad is this firmware with an Azoteq touchpad on each half,
+ *   in touchpad mode as Windows and Linux have it (?fakeBoard=touchpad-os too);
+ *   ?fakeBoard=touchpad-gestures the same board on built-in gestures, as on a
+ *   Mac (the computer never asks for touchpad mode).
  *   ?fakeBoard=leader0 is firmware from before x4.3.3 whose settings reset
  *   stored a leader timeout of 0 (fresh on every load).
  *   Its settings stay in this browser across reloads (except turbo6 and leader0).
@@ -64,14 +66,14 @@ export function themeFromSearch(search: string): ResolvedTheme | null {
  * "combo-names": this firmware (combo names, typing pause); "old": firmware
  * without combo names; "no-pause": firmware that can't pause typing.
  */
-export type FakeBoardChoice = "combo-names" | "old" | "no-pause" | "turbo6" | "leader0" | "touchpad" | "touchpad-os";
+export type FakeBoardChoice = "combo-names" | "old" | "no-pause" | "turbo6" | "leader0" | "touchpad" | "touchpad-gestures";
 
 /** ?fakeBoard (any value but "old" or "nopause") is the simulated board with combo names; absent is null. */
 export function fakeBoardFromSearch(search: string): FakeBoardChoice | null {
     const value = param(search, FAKE_BOARD_PARAM);
     if (value === null) return null;
     const v = value.trim().toLowerCase();
-    return v === "old" ? "old" : v === "nopause" || v === "no-pause" ? "no-pause" : v === "turbo6" ? "turbo6" : v === "leader0" ? "leader0" : v === "touchpad" ? "touchpad" : v === "touchpad-os" ? "touchpad-os" : "combo-names";
+    return v === "old" ? "old" : v === "nopause" || v === "no-pause" ? "no-pause" : v === "turbo6" ? "turbo6" : v === "leader0" ? "leader0" : v === "touchpad" || v === "touchpad-os" ? "touchpad" : v === "touchpad-gestures" ? "touchpad-gestures" : "combo-names";
 }
 
 /** ?tester: open the matrix tester on start. */

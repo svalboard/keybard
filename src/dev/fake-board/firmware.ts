@@ -58,6 +58,7 @@ export const FLAG3_PAD_TOUCH = 0x40;
 // flags3 bit 7: the fingers page of 0x2D (page 2); flags4 (GET_INFO byte 21) bit 0: the palm rejection (VIA 58).
 export const FLAG3_PAD_FINGERS = 0x80;
 export const FLAG4_PAD_PALM = 0x01;
+export const FLAG4_PAD_MODE = 0x02;
 // pad_gestures.c sval_pad_hold_ms: the hold times the board stores, the default (300) first.
 /** The build's own scroll distance on the native touchpad (50 pixels at 2048 across 43 mm). */
 const FAKE_SCROLL_BUILD_MM100 = 105;
@@ -136,8 +137,8 @@ export interface FakeFirmwareOptions {
     padGestures?: boolean;
     /** An Azoteq touchpad on each half (0x2C, 0x18), instead of no pointing module. Default false. */
     touchpad?: boolean;
-    /** The computer has both pads as a touchpad (Input Mode 3): the touch pages say so. Default false. */
-    padsOs?: boolean;
+    /** The computer asks for touchpad mode (Input Mode 3), as Windows and Linux do. Default false. */
+    hostTouchpad?: boolean;
 }
 
 /** A Sval table (TABLE_SCAN ids 0-4): its storage, entry size and "in use" test. */
@@ -211,8 +212,14 @@ export class FakeSvalFirmware {
     readonly timingUsOnly: boolean;
     readonly padGestures: boolean;
     readonly touchpad: boolean;
-    /** The computer has both pads as a touchpad (the touch pages' OS bits); tests may flip it. */
-    padsOs: boolean;
+    /** The computer asks for touchpad mode (Input Mode 3); tests may flip it. */
+    hostTouchpad: boolean;
+    /** The touchpad mode (VIA 59): 0 Automatic (the default), 1 built-in gestures. */
+    padMode = 0;
+    /** The pads are a touchpad now: the computer asks, and the mode lets it (the touch pages' OS bits, 0x2C bit 4). */
+    get padsOs(): boolean {
+        return this.hostTouchpad && this.padMode === 0;
+    }
     /** The palm rejection (VIA 58): an area in channels, 0 off (the default). */
     padPalm = 0;
     /**
@@ -270,7 +277,7 @@ export class FakeSvalFirmware {
         this.timingUsOnly = options.timingUsOnly ?? true;
         this.padGestures = options.padGestures ?? true;
         this.touchpad = options.touchpad ?? false;
-        this.padsOs = options.padsOs ?? false;
+        this.hostTouchpad = options.hostTouchpad ?? false;
         this.onChange = options.onChange;
         if (this.timingUsOnly) this.migrateTiming();
         this.factoryKeymap = options.factoryKeymap;
@@ -724,6 +731,15 @@ export class FakeSvalFirmware {
             }
             return;
         }
+        if (this.padGestures && this.touchpad && valueId === 59) {
+            if (command === 0x07) {
+                this.customWrites.push({ id: valueId, value: Array.from(value.subarray(0, 2)) });
+                this.padMode = value[0] === 1 ? 1 : 0;
+            } else if (command === 0x08) {
+                value[0] = this.padMode;
+            }
+            return;
+        }
         if (this.padGestures && this.touchpad && valueId === 58) {
             if (command === 0x07) {
                 this.customWrites.push({ id: valueId, value: Array.from(value.subarray(0, 2)) });
@@ -991,7 +1007,7 @@ export class FakeSvalFirmware {
                 data[18] = s.storageFlags & 0x05; // bit 1 (write failed) never happens here
                 data[19] = this.featureFlags2;
                 if (length > 20) data[20] = this.featureFlags3;
-                if (length > 21) data[21] = this.padGestures && this.touchpad ? FLAG4_PAD_PALM : 0;
+                if (length > 21) data[21] = this.padGestures && this.touchpad ? FLAG4_PAD_PALM | FLAG4_PAD_MODE : 0;
                 break;
             }
             case 0x2a: // STORAGE_RESET_CLEAR
@@ -1101,7 +1117,7 @@ export class FakeSvalFirmware {
                         // flags: reported | auto (the build drives whatever answers); built for none; none answered.
                         if (this.touchpad) {
                             // An Azoteq pad on each half (IQS550: product 40).
-                            // Bit 4: the computer drives the pad as a touchpad (?fakeBoard=touchpad-os).
+                            // Bit 4: the pad is a touchpad now (?fakeBoard=touchpad, in Automatic).
                             const os = this.padsOs ? 0x10 : 0;
                             out.set([0x01 | 0x04 | 0x08 | os, 5, 5, 0, 40], 1);
                             out.set([0x01 | 0x02 | 0x04 | 0x08 | os, 5, 5, 0, 40], 6);

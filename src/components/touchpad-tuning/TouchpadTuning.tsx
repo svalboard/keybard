@@ -8,15 +8,29 @@ import type { KeyboardInfo } from "@/types/keyboard.types";
 import { getPadTouch } from "@/services/pad-touch.service";
 import { boardHasTouchpad, PAD_HOLD_KEY, PAD_HOLD_MS, PAD_HOLD_MS_KEY } from "@/utils/touchpad-taps";
 import {
-    contactRadius, EMPTY_BLOCK, EMPTY_FINGERS, formatMm, formatPalm, hasPadPalm, hasPadTouch, hasPadTuning, PAD_DEAD_ZONE_DEFAULT, PAD_DEAD_ZONE_KEY,
+    contactRadius, EMPTY_BLOCK, EMPTY_FINGERS, formatMm, formatPalm, hasPadMode, hasPadPalm, hasPadTouch, hasPadTuning, PAD_DEAD_ZONE_DEFAULT, PAD_DEAD_ZONE_KEY, PAD_MODE_AUTO, PAD_MODE_KEY,
     PAD_DEAD_ZONE_MM100, PAD_HEIGHT_MM100, PAD_PALM_CHANNELS, PAD_PALM_KEY, PAD_SCROLL_KEY, PAD_SCROLL_MM100, PAD_TAP_DEFAULT_MS, PAD_TAP_MS,
     PAD_TAP_MS_KEY, PAD_WIDTH_MM100, steps, TouchTracker, type MultiTouch, type PadFingersBlock, type PadTouchBlock, type PadTouchReport,
     type TouchOutcome,
 } from "@/utils/touchpad-tuning";
 import { PadView, type PadTiming } from "./PadView";
+import { TouchpadModeControl, useTouchpadModeChange } from "./TouchpadMode";
 
 /** Finished touches kept per pad, newest first, in the pad's scrolling list. */
 const OUTCOMES = 50;
+
+/**
+ * A setting only the chip uses. In touchpad mode it isn't there for the user
+ * (invisible, out of the tab order and the accessibility tree), but its box
+ * keeps its place, so nothing moves when the mode changes.
+ */
+function ChipOnly({ hidden, children }: { hidden: boolean; children: React.ReactNode }) {
+    return (
+        <div className={hidden ? "invisible" : undefined} aria-hidden={hidden || undefined} inert={hidden || undefined} data-chip-only={hidden ? "hidden" : "shown"}>
+            {children}
+        </div>
+    );
+}
 
 interface StepProps {
     label: string;
@@ -135,6 +149,7 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
     const supported = !!keyboard && hasPadTuning(keyboard.feature_flags3) && boardHasTouchpad(keyboard);
     const liveOn = supported && isConnected && hasPadTouch(keyboard?.feature_flags3);
     const live = useLiveTouch(liveOn, keyboard, isConnected);
+    const modeChange = useTouchpadModeChange((m) => { void setValue(PAD_MODE_KEY, m); });
 
     if (!supported) return <p className="px-3 py-2 text-sm text-muted-foreground">Connect a board with a touchpad to tune it.</p>;
 
@@ -144,6 +159,8 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
     const holdOn = (values.get(PAD_HOLD_KEY) ?? 1) !== 0;
     const scroll = values.get(PAD_SCROLL_KEY) ?? 0;
     const palmOn = hasPadPalm(keyboard.feature_flags4);
+    const modeOn = hasPadMode(keyboard.feature_flags4);
+    const modeValue = values.get(PAD_MODE_KEY) ?? PAD_MODE_AUTO;
     const palmValue = values.get(PAD_PALM_KEY) ?? 0;
     const palmTable = PAD_PALM_CHANNELS.includes(palmValue as never) ? PAD_PALM_CHANNELS : [...PAD_PALM_CHANNELS, palmValue];
     // The build's own scroll distance reads back as its millimeters; show it on the scale.
@@ -162,19 +179,30 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
 
     const controls = (
         <div className="flex flex-col gap-1.5">
+            {modeOn && <TouchpadModeControl value={modeValue} onChange={(m) => modeChange.change(m, modeValue)} />}
+            {modeChange.confirm}
             {/* Always laid out, shown only in touchpad mode: the controls never move when the mode is learned. */}
             <p className={cn("min-h-5 text-sm text-muted-foreground", osMode ? "" : "invisible")} aria-hidden={!osMode} data-os-mode-note>
                 Windows or Linux decides taps and scrolling in this mode, so use the system touchpad settings{windows ? " (Settings > Bluetooth & devices > Touchpad)" : ""}.
             </p>
             <div className={cn("grid gap-2 @lg:grid-cols-2", palmOn ? "@5xl:grid-cols-5" : "@5xl:grid-cols-4")} data-tuning-controls data-os-mode={osMode || undefined}>
-                <StepControl label="Dead zone" value={deadZone} table={PAD_DEAD_ZONE_MM100} format={formatMm} onChange={(v) => setValue(PAD_DEAD_ZONE_KEY, v)} disabled={osMode}
-                    note="How far a finger can move before a tap or a hold is canceled." />
-                <StepControl label="Tap time" value={tapMs} table={PAD_TAP_MS} format={(v) => `${v} ms`} onChange={(v) => setValue(PAD_TAP_MS_KEY, v)} disabled={osMode}
-                    note="A tap must lift within this." />
-                <StepControl label="Hold time" value={holdMs} table={PAD_HOLD_MS} format={(v) => `${v} ms`} onChange={(v) => setValue(PAD_HOLD_MS_KEY, v)} disabled={!holdOn || osMode}
-                    note={holdOn ? `Press and hold clicks after the tap time plus this: ${tapMs + holdMs} ms.` : "Press and Hold to Drag is off in Pointing Devices."} />
-                <StepControl label="Scroll start" value={scroll} table={scrollTable} format={formatMm} onChange={(v) => setValue(PAD_SCROLL_KEY, v)} disabled={osMode}
-                    note="How far two fingers move, on average, before they scroll." />
+                {/* The chip's gesture settings do nothing in touchpad mode: hidden then, their space kept empty. */}
+                <ChipOnly hidden={osMode}>
+                    <StepControl label="Dead zone" value={deadZone} table={PAD_DEAD_ZONE_MM100} format={formatMm} onChange={(v) => setValue(PAD_DEAD_ZONE_KEY, v)}
+                        note="How far a finger can move before a tap or a hold is canceled." />
+                </ChipOnly>
+                <ChipOnly hidden={osMode}>
+                    <StepControl label="Tap time" value={tapMs} table={PAD_TAP_MS} format={(v) => `${v} ms`} onChange={(v) => setValue(PAD_TAP_MS_KEY, v)}
+                        note="A tap must lift within this." />
+                </ChipOnly>
+                <ChipOnly hidden={osMode}>
+                    <StepControl label="Hold time" value={holdMs} table={PAD_HOLD_MS} format={(v) => `${v} ms`} onChange={(v) => setValue(PAD_HOLD_MS_KEY, v)} disabled={!holdOn}
+                        note={holdOn ? `Press and hold clicks after the tap time plus this: ${tapMs + holdMs} ms.` : "Press and Hold to Drag is off in Pointing Devices."} />
+                </ChipOnly>
+                <ChipOnly hidden={osMode}>
+                    <StepControl label="Scroll start" value={scroll} table={scrollTable} format={formatMm} onChange={(v) => setValue(PAD_SCROLL_KEY, v)}
+                        note="How far two fingers move, on average, before they scroll." />
+                </ChipOnly>
                 {palmOn && (
                     <StepControl label="Palm rejection" value={palmValue} table={palmTable} format={formatPalm} onChange={(v) => setValue(PAD_PALM_KEY, v)}
                         note="A contact larger than this, in the pad's channels, is a palm and is ignored." />

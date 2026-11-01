@@ -3,7 +3,7 @@ Browser tests of the touchpad tap setting (svalboard/qmk "Touchpad taps": VIA
 values 51-54, GET_INFO byte 20 bit 4) in the Pointing Devices panel, against
 the simulated Svalboard. Run with `npm run test:e2e:touchpad-taps`.
 
-  1. ?fakeBoard=touchpad (an Azoteq pad on each half): a Touchpad section with
+  1. ?fakeBoard=touchpad-gestures (an Azoteq pad on each half, on built-in gestures): a Touchpad section with
      Tap to Click, Two-Finger Tap to Right Click and Press and Hold to Drag, all
      on, Hold Time 300 ms, and the one-line note about Windows and Linux.
   2. Each switch writes its value and saves; the board's setting follows, and
@@ -34,7 +34,7 @@ HOLD_MS = "Hold Time (ms)"
 NOTE = "Windows and Linux use their own touchpad settings while the pads are in touchpad mode."
 
 
-def open_page(browser, url: str, board="fakeBoard=touchpad", viewport=(1440, 900), scheme="light", bottom_bar=False):
+def open_page(browser, url: str, board="fakeBoard=touchpad-gestures", viewport=(1440, 900), scheme="light", bottom_bar=False):
     context = browser.new_context(viewport={"width": viewport[0], "height": viewport[1]}, color_scheme=scheme,
                                   reduced_motion="reduce")
     if bottom_bar:
@@ -152,8 +152,8 @@ def flow_bottom_bar(browser, url):
 def flow_no_animation(browser, url):
     context, page, _ = open_page(browser, url)
     expect(toggle(page, TAP)).to_be_visible(timeout=15000)
-    # The shared ON/OFF toggle, slider and number field keep their existing hover fades.
-    shared = "[data-slot='slider-thumb'], [data-slot='input'], [role='group'] > button"
+    # The shared ON/OFF toggle, slider, number field and dropdown (Touchpad Mode) keep their existing hover fades.
+    shared = "[data-slot='slider-thumb'], [data-slot='input'], [data-slot='select-trigger'], [role='group'] > button"
     bad = section(page).evaluate(f"""root => [root, ...root.querySelectorAll('*')].filter(e => {{
         const s = getComputedStyle(e);
         const anim = s.animationName !== 'none';

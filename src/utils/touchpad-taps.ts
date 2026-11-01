@@ -9,7 +9,10 @@
 // Pointing Device menu when the flag is set, and shows them only while a half
 // has a touchpad.
 import type { CustomUIMenuItem, KeyboardInfo } from "@/types/keyboard.types";
-import { hasPadPalm, hasPadTuning, PAD_DEAD_ZONE_KEY, PAD_PALM_KEY, PAD_SCROLL_KEY, PAD_TAP_MS_KEY, TUNE_TOUCHPAD_ACTION, TUNE_TOUCHPAD_LABEL } from "./touchpad-tuning";
+import {
+    hasPadMode, hasPadPalm, hasPadTuning, PAD_DEAD_ZONE_KEY, PAD_MODE_KEY, PAD_MODE_LABELS, PAD_PALM_KEY, PAD_SCROLL_KEY, PAD_TAP_MS_KEY,
+    TUNE_TOUCHPAD_ACTION, TUNE_TOUCHPAD_LABEL,
+} from "./touchpad-tuning";
 
 /** GET_INFO byte 20 (feature_flags3) bit 4: VIA values 51-54. */
 export const SVIL_FLAG3_PAD_GESTURES = 0x10;
@@ -18,7 +21,7 @@ export const PAD_TAP_KEY = "id_pad_tap";
 export const PAD_TWO_FINGER_KEY = "id_pad_two_finger";
 export const PAD_HOLD_KEY = "id_pad_hold";
 export const PAD_HOLD_MS_KEY = "id_pad_hold_ms";
-export const PAD_KEYS = [PAD_TAP_KEY, PAD_TWO_FINGER_KEY, PAD_HOLD_KEY, PAD_HOLD_MS_KEY] as const;
+export const PAD_KEYS = [PAD_TAP_KEY, PAD_TWO_FINGER_KEY, PAD_HOLD_KEY, PAD_HOLD_MS_KEY, PAD_MODE_KEY] as const;
 
 /**
  * The hold times the board stores (pad_gestures.c sval_pad_hold_ms), the
@@ -34,7 +37,7 @@ export const PAD_HOLD_DEFAULT_MS = PAD_HOLD_MS[0];
  * SVAL_POINTER_OS_TOUCHPAD).
  */
 export const PADS_OS_KEY = "app_pads_os";
-const PADS_OS_IF = `{${PADS_OS_KEY}} == 1`;
+const PADS_MOUSE_IF = `{${PADS_OS_KEY}} == 0`;
 
 /** Every half with a touchpad reported that the computer drives it as a touchpad (Input Mode 3). */
 export function padsInTouchpadMode(kbinfo: KeyboardInfo | null | undefined): boolean {
@@ -82,12 +85,14 @@ export function touchpadSection(channel: number, featureFlags3?: number | null, 
         label: TOUCHPAD_SECTION_LABEL,
         note: TOUCHPAD_NOTE,
         content: [
-            // Grayed out while the computer has the pads in touchpad mode: it makes its own taps then.
-            { label: "Tap to Click", type: "toggle", disabledIf: PADS_OS_IF, content: [PAD_TAP_KEY, channel, 51] },
-            { label: "Two-Finger Tap to Right Click", type: "toggle", disabledIf: PADS_OS_IF, content: [PAD_TWO_FINGER_KEY, channel, 52] },
-            { label: "Press and Hold to Drag", type: "toggle", disabledIf: PADS_OS_IF, content: [PAD_HOLD_KEY, channel, 53] },
+            // Touchpad mode (VIA 59) first: the switches below are the built-in gestures'.
+            ...(hasPadMode(featureFlags4) ? [{ label: "Touchpad Mode", type: "dropdown" as const, options: [...PAD_MODE_LABELS], content: [PAD_MODE_KEY, channel, 59] }] : []),
+            // Hidden while the computer has the pads in touchpad mode: it makes its own taps then.
+            { label: "Tap to Click", type: "toggle", showIf: PADS_MOUSE_IF, content: [PAD_TAP_KEY, channel, 51] },
+            { label: "Two-Finger Tap to Right Click", type: "toggle", showIf: PADS_MOUSE_IF, content: [PAD_TWO_FINGER_KEY, channel, 52] },
+            { label: "Press and Hold to Drag", type: "toggle", showIf: PADS_MOUSE_IF, content: [PAD_HOLD_KEY, channel, 53] },
             // Grayed out, not hidden, while press and hold is off: it keeps its time.
-            { label: "Hold Time (ms)", type: "range", options: [20, 1500, 10], disabledIf: [`{${PAD_HOLD_KEY}} == 0`, PADS_OS_IF], content: [PAD_HOLD_MS_KEY, channel, 54] },
+            { label: "Hold Time (ms)", type: "range", options: [20, 1500, 10], showIf: PADS_MOUSE_IF, disabledIf: `{${PAD_HOLD_KEY}} == 0`, content: [PAD_HOLD_MS_KEY, channel, 54] },
             ...(hasPadTuning(featureFlags3) ? touchpadTuningItems(channel, featureFlags4) : []),
         ],
     };

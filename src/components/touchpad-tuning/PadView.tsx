@@ -61,10 +61,11 @@ function arc(cx: number, cy: number, r: number, a: number, b: number): string {
 const KIND_TONE: Record<TouchOutcome["kind"], string> = {
     tap: "text-kb-touch-tap", right: "text-kb-touch-tap", hold: "text-kb-touch-hold", canceled: "text-kb-touch-cancel",
     late: "text-muted-foreground", short: "text-muted-foreground", moved: "text-muted-foreground", scroll: "text-kb-touch-tap",
-    palm: "text-muted-foreground", multi: "text-muted-foreground",
+    palm: "text-muted-foreground", multi: "text-muted-foreground", touch: "text-muted-foreground",
 };
 
-function markOf(events: number, scrolled: boolean, gesture: "one" | "two" | "many"): { text: string; tone: string; cancel: boolean } | null {
+function markOf(events: number, scrolled: boolean, gesture: "one" | "two" | "many" | "os"): { text: string; tone: string; cancel: boolean } | null {
+    if (gesture === "os") return null;
     if (events & TOUCH_EV.twoTap) return { text: "Right click", tone: "var(--kb-touch-tap)", cancel: false };
     if (scrolled) return { text: "Scroll", tone: "var(--kb-touch-tap)", cancel: false };
     // The first finger's tap, hold and dead zone say nothing about a touch of more fingers.
@@ -96,9 +97,11 @@ export function PadView({ side, block, readAt, touchEvents, trail, timing, outco
     if (block.strength > strongest.current) strongest.current = block.strength;
     const press = block.strength ? 0.15 + 0.35 * Math.min(1, block.strength / strongest.current) : 0.2;
 
+    // Touchpad mode: the computer makes the gestures, so this pad shows contacts, palms and counts only.
+    const osPad = block.os;
     const multi = fingers.valid;
     const peak = Math.max(touch?.maxFingers ?? 0, multi ? fingers.fingers.length : block.fingers);
-    const gesture: "one" | "two" | "many" = touch?.hadTwo && peak <= 2 ? "two" : peak >= 3 ? "many" : peak === 2 && !multi ? "two" : "one";
+    const gesture: "one" | "two" | "many" | "os" = osPad ? "os" : touch?.hadTwo && peak <= 2 ? "two" : peak >= 3 ? "many" : peak === 2 && !multi ? "two" : "one";
     const two = gesture === "two" && multi;
     const scrolled = two && (fingers.scrolled || !!touch?.scrolledAt);
 
@@ -146,14 +149,19 @@ export function PadView({ side, block, readAt, touchEvents, trail, timing, outco
     const centroid = pair ? { x: (pair[0].x + pair[1].x) / 2, y: (pair[0].y + pair[1].y) / 2 } : twoTrail[twoTrail.length - 1] ?? null;
     const n = multi ? fingers.fingers.length : block.down ? block.fingers : 0;
 
-    const readout = !shown ? null : gesture === "two" && multi
+    const fingerCount = (k: number) => `${WORDS[k] ?? k} finger${k === 1 ? "" : "s"}`;
+    const readout = !shown ? null : gesture === "os"
+        ? <>{down ? `${fingerCount(n)} down` : `last touch, ${fingerCount(peak)}`}</>
+        : gesture === "two" && multi
         ? <>{down ? "two fingers · " : "last touch, two fingers · "}moved {formatMm(travel)} of {formatMm(timing.scrollStart)}</>
         : gesture === "many"
             ? <>{down ? `${WORDS[n] ?? n} fingers down` : `last touch, ${WORDS[peak] ?? peak} fingers`}</>
             : <>{down ? "down " : "last touch "}<span ref={msRef} />{<> · moved {formatMm(block.farthest)} of {formatMm(timing.deadZone)}</>}
                 {down && contactR > 0 && <> · contact {formatMm(contactR * 2)} across</>}</>;
 
-    const caption = gesture === "two"
+    const caption = gesture === "os"
+        ? "Touchpad mode: contacts only"
+        : gesture === "two"
         ? `Close-up, ${zoom}× · scroll start ${formatMm(timing.scrollStart)}, average travel`
         : gesture === "many"
             ? `${(WORDS[peak] ?? String(peak)).replace(/^./, (c) => c.toUpperCase())} fingers: no tap or scroll on the chip`
@@ -223,7 +231,7 @@ export function PadView({ side, block, readAt, touchEvents, trail, timing, outco
                                             <circle cx={block.x} cy={block.y} r={70} fill="var(--kb-touch-finger)" />
                                         </>
                                     )}
-                                    {mark && <text x={Math.min((centroid?.x ?? block.x) + 200, timing.width - 1600)} y={Math.max((centroid?.y ?? block.y) - 400, 330)} fontSize={280} fontWeight={600} fill={mark.tone} data-mark={mark.text}>{mark.text}</text>}
+                                    {mark && gesture !== "os" && <text x={Math.min((centroid?.x ?? block.x) + 200, timing.width - 1600)} y={Math.max((centroid?.y ?? block.y) - 400, 330)} fontSize={280} fontWeight={600} fill={mark.tone} data-mark={mark.text}>{mark.text}</text>}
                                 </g>
                             )}
                         </svg>
@@ -279,7 +287,7 @@ export function PadView({ side, block, readAt, touchEvents, trail, timing, outco
                                         })()}
                                         {mark && !mark.cancel && <circle cx={block.x} cy={block.y} r={dz * 0.16} fill="none" stroke={mark.tone} strokeWidth={dz * 0.07} />}
                                     </>
-                                ) : shown ? null : (
+                                ) : shown || osPad ? null : (
                                     <circle cx={cx} cy={cy} r={ref} fill="none" stroke="var(--kb-touch-edge)" strokeWidth={ref * 0.04} />
                                 )}
                             </svg>
@@ -287,7 +295,7 @@ export function PadView({ side, block, readAt, touchEvents, trail, timing, outco
                         </figure>
                     </div>
                     <p className={"h-8 shrink-0 overflow-hidden text-xs text-muted-foreground" + (block.os ? "" : " invisible")} aria-hidden={!block.os} data-pad-os>
-                        Touchpad mode: the computer decides this pad's taps and scrolling. The list says what the chip would have done.
+                        Touchpad mode on this pad: the list shows each touch's fingers and palms.
                     </p>
                     <ol className="flex h-44 shrink-0 flex-col gap-0.5 overflow-y-auto sm:h-auto sm:min-h-44 sm:flex-1 rounded-md border border-kb-gray-border px-2 py-1.5 text-xs" aria-label={`${label}: last touches, newest first`} tabIndex={0} data-outcomes>
                         {outcomes.length === 0 && <li className="text-muted-foreground">Touch the pad: each touch shows here, with why it clicked or didn't.</li>}

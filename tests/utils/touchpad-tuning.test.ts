@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { SCRIPT_MS, scriptSample, TOUCH_SCRIPT } from "@/dev/fake-board/touch-script";
 import { withTouchpadTaps } from "@/utils/touchpad-taps";
 import {
-    ChipModel, chipWould, contactRadius, EMPTY_BLOCK, EMPTY_FINGERS, formatMm, formatPalm, hasPadFingers, hasPadPalm, hasPadTouch, hasPadTuning, isPalm,
+    ChipModel, contactRadius, EMPTY_BLOCK, EMPTY_FINGERS, formatMm, formatPalm, hasPadFingers, hasPadPalm, hasPadTouch, hasPadTuning, isPalm,
     nearest, outcome, packPadFingers, packPadTouch, PAD_DEAD_ZONE_MM100, PAD_PALM_KEY, PAD_SCROLL_MM100, PAD_TAP_MS, PAD_TUNING_KEYS, parsePadFingers,
     parsePadTouch, steps, TOUCH_EV, TouchTracker, TUNE_TOUCHPAD_ACTION, type ChipSettings, type PadFingersBlock, type PadTouchBlock, type PadTouchReport,
 } from "@/utils/touchpad-tuning";
@@ -135,8 +135,8 @@ describe("what a touch did, and why", () => {
         expect(run([{ down: true, fingers: 2, events: TOUCH_EV.down }, { events: TOUCH_EV.up | TOUCH_EV.twoTap, ms: 100 }])[0]!.kind).toBe("right");
     });
 
-    it("on a pad the computer has as a touchpad, still says what the chip decided", () => {
-        expect(outcome(TOUCH_EV.tap, 1, { ...EMPTY_BLOCK, valid: true, os: true, ms: 80 }, report()).kind).toBe("tap");
+    it("on a pad in touchpad mode, says only the fingers: the computer made the click", () => {
+        expect(outcome(TOUCH_EV.tap, 1, { ...EMPTY_BLOCK, valid: true, os: true, ms: 80 }, report())).toMatchObject({ kind: "touch", text: "One finger, 80 ms" });
     });
 
     it("keeps the touch's path, from the down point", () => {
@@ -367,14 +367,13 @@ describe("multi-finger touches, and what the chip made of them", () => {
         expect(play("resting palm", {}, 20).done.kind).not.toBe("palm");
     });
 
-    it("in touchpad mode, says what the chip would have done", () => {
-        expect(play("two-finger tap", {}, 0, true).done.text).toMatch(/^Chip would right click \(two-finger tap\), \d+ ms$/);
-        expect(play("two-finger scroll", {}, 0, true).done.text).toMatch(/^Chip would start scrolling after \d/);
-        expect(play("quick tap", {}, 0, true).done).toMatchObject({ kind: "tap", os: true });
-        expect(play("quick tap", {}, 0, true).done.text).toMatch(/^Chip would tap: /);
-        expect(chipWould("No click: 300 ms")).toBe("Chip wouldn't click: 300 ms");
-        expect(chipWould("Canceled: moved 1 mm")).toBe("Chip would cancel: moved 1 mm");
-        expect(chipWould("Palm: 14 channels")).toBe("Palm: 14 channels");
+    it("in touchpad mode, gives each touch's fingers and palms only", () => {
+        expect(play("two-finger tap", {}, 0, true).done).toMatchObject({ kind: "touch", os: true });
+        expect(play("two-finger tap", {}, 0, true).done.text).toMatch(/^Two fingers, \d+ ms$/);
+        expect(play("quick tap", {}, 0, true).done.text).toMatch(/^One finger, \d+ ms$/);
+        expect(play("three-finger touch", {}, 0, true).done.text).toMatch(/^Three fingers, \d+ ms$/);
+        expect(play("resting palm", {}, 10, true).done.text).toMatch(/^Palm: 14 channels, over 10: the computer ignores it/);
+        for (const name of ["two-finger scroll", "pointer move", "press and hold"]) expect(play(name, {}, 0, true).done.text).not.toMatch(/Chip|tap|scroll|hold/i);
     });
 
     it("a stale two-finger touch from before doesn't color a single tap", () => {

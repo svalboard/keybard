@@ -21,7 +21,7 @@ function showBadge(choice: FakeBoardChoice, wipe: () => void) {
         : choice === "turbo6" ? `${FAKE_BOARD_PRODUCT_NAME}, updated from turbo 6`
         : choice === "leader0" ? `${FAKE_BOARD_PRODUCT_NAME}, leader timeout stored as 0`
         : choice === "touchpad" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads`
-        : choice === "touchpad-os" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads in touchpad mode` : FAKE_BOARD_PRODUCT_NAME;
+        : choice === "touchpad-gestures" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads on built-in gestures` : FAKE_BOARD_PRODUCT_NAME;
     const reset = document.createElement("button");
     reset.type = "button";
     reset.textContent = "Reset";
@@ -41,13 +41,14 @@ export function installFakeBoard(choice: FakeBoardChoice): HIDDevice {
     // This firmware has 64-byte reports, the typing pause, the flicker latch and the debounce switch; the older choices have none of them.
     // "turbo6" is this firmware too, on a board that ran turbo 6 with both scan waits at 0 before it.
     // "leader0" is this firmware with the leader timeout of 0 that older firmware's settings reset stored.
-    // "touchpad" is this firmware with an Azoteq touchpad on each half.
-    // "touchpad-os" is the same, with the computer driving both pads as a touchpad (Input Mode 3).
-    const pads = choice === "touchpad" || choice === "touchpad-os";
+    // "touchpad" is this firmware with an Azoteq touchpad on each half, and a computer that asks
+    // for touchpad mode (Input Mode 3) as Windows and Linux do; "touchpad-gestures" the same
+    // board where it never asks (a Mac), so the pads run their built-in gestures.
+    const pads = choice === "touchpad" || choice === "touchpad-gestures";
     const current = choice === "combo-names" || choice === "turbo6" || choice === "leader0" || pads;
     const device = new FakeSvalboardDevice({ comboLabels: choice !== "old", typingPause: current, flickerLatch: current, debounceSwitch: current,
         timingUsOnly: current, seedTurbo: choice === "turbo6" ? 6 : undefined, seedLeaderZero: choice === "leader0", reportLength: current ? 64 : 32,
-        padGestures: current, touchpad: pads, padsOs: choice === "touchpad-os" });
+        padGestures: current, touchpad: pads, hostTouchpad: choice === "touchpad" });
     const wipe = () => {
         device.forgetSettings();
         window.location.reload();

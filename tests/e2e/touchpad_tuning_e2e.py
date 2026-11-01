@@ -35,10 +35,18 @@ the chip's tap and press-and-hold rules. Run with
      after ... mm".
  11. Palm rejection (VIA 58): off by default; set to 10 channels it writes,
      the resting palm is drawn as a palm and listed as one.
- 12. Touchpad mode (?fakeBoard=touchpad-os): one line about the system's
-     touchpad settings, the chip's gesture settings grayed out (and the tap
-     switches in Pointing Devices), palm rejection still live, and the list
-     says what the chip would have done.
+ 12. Touchpad mode (?fakeBoard=touchpad, the shipped behavior on Windows
+     and Linux): one line about the system's touchpad settings; dead zone,
+     tap time, hold time, scroll start and the Pointing Devices switches are
+     absent; palm rejection stays; the pads show fingers and palms only.
+     Built-in gestures (?fakeBoard=touchpad-gestures, as on a Mac) has them.
+ 13. The mode toggle (VIA 59): to built-in gestures asks first (Cancel is
+     the default; Escape and Cancel write nothing), confirming writes it and
+     the chip settings come in live; back to Automatic writes at once; the
+     dialog doesn't move. The same from Pointing Devices' dropdown.
+ 14. The check fits at 390 and 1440 px, light and dark.
+
+Flows 1-11 use ?fakeBoard=touchpad-gestures, where the chip's settings apply.
 
 E2E_URL and E2E_SKIP_BUILD work as in fake_board_e2e.py. SHOT_DIR=path saves
 screenshots. Needs Python Playwright with Chromium. Exits 1 when a check fails.
@@ -57,7 +65,7 @@ FROM_SETTINGS = "panel=settings&tune=touchpad"
 FROM_POINTING = "panel=pointing&tune=touchpad"
 
 
-def open_page(browser, url: str, query: str, board="fakeBoard=touchpad", viewport=(1440, 1000), scheme="light"):
+def open_page(browser, url: str, query: str, board="fakeBoard=touchpad-gestures", viewport=(1440, 1000), scheme="light"):
     context = browser.new_context(viewport={"width": viewport[0], "height": viewport[1]}, color_scheme=scheme, reduced_motion="reduce")
     page = context.new_page()
     errors = []
@@ -343,55 +351,164 @@ def flow_palm(browser, url):
     context.close()
 
 
+CHIP_SETTINGS = ("Dead zone", "Tap time", "Hold time", "Scroll start")
+SWITCHES = ("Tap to Click", "Two-Finger Tap to Right Click", "Press and Hold to Drag")
+PTP = "fakeBoard=touchpad"
+
+
+def mode_writes(page: Page) -> list:
+    return page.evaluate("window.keybardFakeBoard.device.firmware.customWrites.filter(w => w.id === 59).map(w => w.value[0])")
+
+
 def flow_os_mode(browser, url):
-    context, page, errors = open_page(browser, url, FROM_SETTINGS, board="fakeBoard=touchpad-os")
+    # The shipped board: Windows has the pads in touchpad mode.
+    context, page, errors = open_page(browser, url, FROM_SETTINGS, board=PTP)
     note = page.locator("[data-os-mode-note]")
     expect(note).to_be_visible(timeout=15000)
     expect(note).to_contain_text("Windows or Linux decides taps and scrolling")
-    for label in ("Dead zone", "Tap time", "Hold time", "Scroll start"):
-        expect(page.locator(f"[data-step='{label}']")).to_have_attribute("data-disabled", "true")
-    assert page.locator("[data-step='Palm rejection'][data-disabled]").count() == 0, "palm rejection grayed out"
-    page.locator("[data-pad] [data-outcome][data-os]").first.wait_for(state="attached", timeout=30000)
-    page.wait_for_timeout(12000)
-    texts = page.locator("[data-pad='left'] [data-outcome]").all_inner_texts()
-    assert texts and all(t.startswith(("Chip would", "Palm", "Three", "Four", "Five")) for t in texts), texts
+    for label in CHIP_SETTINGS:
+        expect(page.get_by_role("slider", name=label)).to_have_count(0)
+    expect(page.get_by_role("slider", name="Palm rejection")).to_have_count(1)
+    expect(page.get_by_role("radio", name="Automatic")).to_have_attribute("aria-checked", "true")
+    page.locator("[data-pad='left'] [data-outcome]").first.wait_for(state="attached", timeout=30000)
+    page.locator("[data-pad='left'] [data-finger]").first.wait_for(state="attached", timeout=30000)
+    page.wait_for_timeout(9000)
+    texts = page.locator("[data-pad] [data-outcome]").all_inner_texts()
+    import re
+    assert texts and all(re.match(r"^(One finger|(Two|Three|Four|Five) fingers), \d+ ms$|^Palm: ", t) for t in texts), texts
+    guides = "[data-dead-zone], [data-scroll-ring], [data-timer-ring], [data-two-line], [data-mark], [data-path]"
+    assert page.locator(guides).count() == 0, "gesture guides in touchpad mode"
     expect(page.locator("[data-pad='left'] [data-pad-os]")).to_be_visible()
     context.close()
-    # Pointing Devices: the chip's tap switches and hold time gray out too.
-    context, page, errors3 = open_page(browser, url, "panel=pointing", board="fakeBoard=touchpad-os")
-    for name in ("Tap to Click", "Two-Finger Tap to Right Click", "Press and Hold to Drag"):
-        expect(page.get_by_role("group", name=name, exact=True)).to_have_attribute("aria-disabled", "true", timeout=15000)
-    errors += errors3
+    # Pointing Devices: the built-in gesture switches are absent; the mode is there.
+    context, page, errors2 = open_page(browser, url, "panel=pointing", board=PTP)
+    expect(page.get_by_role("combobox", name="Touchpad Mode")).to_be_visible(timeout=15000)
+    for name in SWITCHES:
+        expect(page.get_by_role("group", name=name, exact=True)).to_have_count(0)
+    expect(page.get_by_text("Hold Time (ms)")).to_have_count(0)
     context.close()
-    context, page, errors2 = open_page(browser, url, FROM_SETTINGS)
-    expect(page.locator("[data-step='Dead zone']")).to_be_visible(timeout=15000)
+    # Built-in gestures (a Mac): the switches and the chip settings are there, the line is not.
+    context, page, errors3 = open_page(browser, url, "panel=pointing", board="fakeBoard=touchpad-gestures")
+    for name in SWITCHES:
+        expect(page.get_by_role("group", name=name, exact=True)).to_be_visible(timeout=15000)
+    context.close()
+    context, page, errors4 = open_page(browser, url, FROM_SETTINGS, board="fakeBoard=touchpad-gestures")
+    expect(page.get_by_role("slider", name="Dead zone")).to_be_visible(timeout=15000)
     page.wait_for_timeout(500)
-    assert not page.locator("[data-os-mode-note]").is_visible(), "the touchpad-mode line shows as a mouse"
-    assert page.locator("[data-step][data-disabled]").count() == 0, "a control grayed out as a mouse"
+    assert not page.locator("[data-os-mode-note]").is_visible(), "the touchpad-mode line shows on built-in gestures"
     context.close()
-    context, page, errors4 = open_page(browser, url, "panel=pointing")
-    expect(page.get_by_role("group", name="Tap to Click", exact=True)).to_be_visible(timeout=15000)
-    for name in ("Tap to Click", "Two-Finger Tap to Right Click", "Press and Hold to Drag"):
-        assert page.get_by_role("group", name=name, exact=True).get_attribute("aria-disabled") is None, f"{name} grayed out as a mouse"
-    errors2 += errors4
-    assert not errors and not errors2, errors + errors2
+    assert not (errors or errors2 or errors3 or errors4), errors + errors2 + errors3 + errors4
+
+
+def flow_mode_toggle(browser, url):
+    context, page, errors = open_page(browser, url, FROM_SETTINGS, board=PTP)
+    expect(page.locator("[data-os-mode-note]")).to_be_visible(timeout=15000)
+    page.locator("[data-pad-svg]").nth(1).wait_for(timeout=15000)
+    page.wait_for_timeout(500)
+    first = page.evaluate(BOXES_JS)
+    confirm = page.get_by_role("dialog", name="Use built-in gestures?")
+    tuning = page.get_by_role("dialog", name=TITLE)
+    built_in = page.get_by_role("radio", name="Built-in gestures")
+    # Escape cancels, and Cancel is the default.
+    built_in.click()
+    expect(confirm).to_be_visible(timeout=5000)
+    assert page.evaluate("document.activeElement && document.activeElement.hasAttribute('data-cancel')"), "Cancel is not the default"
+    page.keyboard.press("Escape")
+    expect(confirm).to_be_hidden(timeout=5000)
+    expect(tuning).to_be_visible()
+    # Cancel does the same.
+    built_in.click()
+    expect(confirm).to_be_visible(timeout=5000)
+    confirm.get_by_role("button", name="Cancel").click()
+    expect(confirm).to_be_hidden(timeout=5000)
+    page.wait_for_timeout(300)
+    assert mode_writes(page) == [], f"written on cancel: {mode_writes(page)}"
+    assert page.evaluate("window.keybardFakeBoard.device.firmware.padMode") == 0
+    expect(page.get_by_role("radio", name="Automatic")).to_have_attribute("aria-checked", "true")
+    # Confirm: written, and the chip's settings come in, live.
+    built_in.click()
+    confirm.get_by_role("button", name="Use built-in gestures").click()
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padMode === 1", timeout=5000)
+    assert mode_writes(page) == [1], mode_writes(page)
+    expect(page.get_by_role("slider", name="Dead zone")).to_be_visible(timeout=5000)
+    expect(page.locator("[data-os-mode-note]")).to_be_hidden(timeout=5000)
+    page.wait_for_timeout(500)
+    assert page.evaluate(BOXES_JS) == first, "the layout moved on the switch to built-in gestures"
+    # Back to Automatic: no check, written at once.
+    page.get_by_role("radio", name="Automatic").click()
+    expect(confirm).to_be_hidden()
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padMode === 0", timeout=5000)
+    assert mode_writes(page) == [1, 0], mode_writes(page)
+    expect(page.get_by_role("slider", name="Dead zone")).to_have_count(0, timeout=5000)
+    page.wait_for_timeout(500)
+    assert page.evaluate(BOXES_JS) == first, "the layout moved on the switch back to Automatic"
+    assert not errors, errors
     context.close()
+    # Pointing Devices: the same check from its dropdown; the switches come in after it.
+    context, page, errors2 = open_page(browser, url, "panel=pointing", board=PTP)
+    combo = page.get_by_role("combobox", name="Touchpad Mode")
+    confirm = page.get_by_role("dialog", name="Use built-in gestures?")
+    expect(combo).to_be_visible(timeout=15000)
+    combo.click()
+    page.get_by_role("option", name="Built-in gestures").click()
+    expect(confirm).to_be_visible(timeout=5000)
+    confirm.get_by_role("button", name="Cancel").click()
+    page.wait_for_timeout(300)
+    assert mode_writes(page) == [], mode_writes(page)
+    expect(combo).to_contain_text("Automatic")
+    combo.click()
+    page.get_by_role("option", name="Built-in gestures").click()
+    confirm.get_by_role("button", name="Use built-in gestures").click()
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padMode === 1", timeout=5000)
+    for name in SWITCHES:
+        expect(page.get_by_role("group", name=name, exact=True)).to_be_visible(timeout=5000)
+    combo.click()
+    page.get_by_role("option", name="Automatic").click()
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padMode === 0", timeout=5000)
+    expect(confirm).to_be_hidden()
+    for name in SWITCHES:
+        expect(page.get_by_role("group", name=name, exact=True)).to_have_count(0, timeout=5000)
+    assert not errors2, errors2
+    context.close()
+
+
+def flow_confirm_layout(browser, url):
+    for width, height in ((390, 844), (1440, 1000)):
+        for scheme in ("light", "dark"):
+            context, page, _ = open_page(browser, url, FROM_SETTINGS, board=PTP, viewport=(width, height), scheme=scheme)
+            page.get_by_role("radio", name="Built-in gestures").click()
+            box = page.locator("[data-builtin-confirm]").bounding_box()
+            assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1 and box["y"] >= 0 and box["y"] + box["height"] <= height + 1, f"{width} {scheme}: {box}"
+            over = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert over <= 1, f"{width} {scheme}: sideways {over}"
+            context.close()
 
 
 def fingers_shots(browser, url, out):
+    gestures = "fakeBoard=touchpad-gestures"
     for scheme in ("light", "dark"):
         for n, gesture in ((1, "one"), (2, "two"), (3, "many")):
-            context, page, _ = open_page(browser, url, FROM_SETTINGS, scheme=scheme)
+            context, page, _ = open_page(browser, url, FROM_SETTINGS, board=gestures, scheme=scheme)
             expect(view(page)).to_be_visible(timeout=15000)
-            # Two fingers: the scroll, its average travel past the half of the scroll start.
+            # Two fingers: the scroll, its average travel past half the scroll start.
             extra = "&& (() => { const t = p.querySelector('[data-travel-ring]'); return !!t && Number(t.getAttribute('r')) > 60; })()" if n == 2 else ""
             wait_fingers(page, n, gesture, timeout=40000, extra=extra)
             page.screenshot(path=os.path.join(out, f"fingers-{n}-{scheme}.png"))
             context.close()
-    context, page, _ = open_page(browser, url, FROM_SETTINGS, board="fakeBoard=touchpad-os")
-    expect(view(page)).to_be_visible(timeout=15000)
-    page.wait_for_timeout(12000)
-    page.screenshot(path=os.path.join(out, "touchpad-mode-light.png"))
+        context, page, _ = open_page(browser, url, FROM_SETTINGS, board=PTP, scheme=scheme)
+        expect(view(page)).to_be_visible(timeout=15000)
+        wait_fingers(page, 2, "os", timeout=40000)
+        page.screenshot(path=os.path.join(out, f"touchpad-mode-{scheme}.png"))
+        page.get_by_role("radio", name="Built-in gestures").click()
+        expect(page.locator("[data-builtin-confirm]")).to_be_visible(timeout=5000)
+        page.wait_for_timeout(300)
+        page.screenshot(path=os.path.join(out, f"confirm-{scheme}.png"))
+        context.close()
+    context, page, _ = open_page(browser, url, FROM_SETTINGS, board=PTP, viewport=(390, 844))
+    page.get_by_role("radio", name="Built-in gestures").click()
+    expect(page.locator("[data-builtin-confirm]")).to_be_visible(timeout=15000)
+    page.wait_for_timeout(300)
+    page.screenshot(path=os.path.join(out, "confirm-phone-light.png"))
     context.close()
 
 
@@ -433,7 +550,9 @@ def main() -> int:
         ("9. no layout shift over 50+ touches and 1-3 fingers, lists scroll in place (390, 1440)", flow_stable),
         ("10. every finger: two with the scroll-start ring and a line, three with none; listed", flow_fingers),
         ("11. palm rejection: off, then 10 channels writes and marks the resting palm", flow_palm),
-        ("12. touchpad mode: the system line, chip settings grayed out, the chip's would-be results", flow_os_mode),
+        ("12. touchpad mode: the system line, chip settings and switches absent, fingers and palms only", flow_os_mode),
+        ("13. the mode toggle: the check (Escape, Cancel write nothing), confirm writes, Automatic at once, nothing moves", flow_mode_toggle),
+        ("14. the check fits at 390 and 1440 px, light and dark", flow_confirm_layout),
     ]
     only = os.environ.get("E2E_ONLY")
     if only:
