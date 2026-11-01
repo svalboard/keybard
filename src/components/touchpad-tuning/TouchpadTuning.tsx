@@ -103,6 +103,9 @@ const NO_LIVE: LiveState = {
     right: NO_PAD,
 };
 
+/** Before the first report: each pad drawn empty, not as "no touchpad", so nothing changes when it answers. */
+const WAITING_BLOCK: PadTouchBlock = { ...EMPTY_BLOCK, valid: true };
+
 /** A pad missing from the reports this long is shown as gone. */
 const PAD_GONE_MS = 1000;
 
@@ -248,7 +251,7 @@ export function TouchpadTuning({ place }: TouchpadTuningProps) {
         <div className="flex flex-col gap-6 @3xl:flex-row sm:min-h-0 sm:flex-1" data-pads>
             {(["left", "right"] as const).map((side) => (
                 <div key={side} className="flex min-w-0 flex-1 flex-col sm:min-h-0">
-                    <PadView side={side} block={live[side].block} readAt={live.readAt} touchEvents={live[side].events} trail={live[side].trail} count={live[side].count} timing={timing}
+                    <PadView side={side} block={live.report ? live[side].block : WAITING_BLOCK} readAt={live.readAt} touchEvents={live[side].events} trail={live[side].trail} count={live[side].count} timing={timing}
                         contactR={r ? contactRadius(live[side].block.area, r) : 0}
                         outcomes={live[side].outcomes} fingers={live[side].fingers} touch={live[side].touch} twoTrail={live[side].twoTrail}
                         radiusOf={(area) => (r ? contactRadius(area, r) : 0)} palm={palm} touchpadMode={osMode} />
