@@ -22,11 +22,13 @@ export function pointingMenuIndex(menus: CustomUIMenuItem[] | undefined): number
  * the pending changes, and reads the value back: board state, not an edit, so
  * it goes into the draft and the loaded copy alike (Discard never reverts it,
  * no unsaved-changes prompt). It resolves true once the board has it; on a
- * failed write it shows the board's value again and sets `writeError`. For the
+ * failed write it shows the board's value again (read back, or else as loaded)
+ * and sets `writeError`; a write that landed but couldn't be read back keeps the
+ * value and says only that. For the
  * touchpad tuning dialog, which tunes against the live pads.
  */
 export function useMenuValues(menu: CustomUIMenuItem | undefined) {
-    const { keyboard, setKeyboard, applyBoardState, isConnected } = useKeyboard();
+    const { keyboard, originalKeyboard, setKeyboard, applyBoardState, isConnected } = useKeyboard();
     const { queue, clear } = useChanges();
     const [values, setValues] = useState<Map<string, number>>(new Map());
     const [loading, setLoading] = useState(true);
@@ -119,31 +121,48 @@ export function useMenuValues(menu: CustomUIMenuItem | undefined) {
         // overwrite this one at Apply: it goes, so the board keeps the value chosen last.
         for (const [k] of writes) clear(`custom:${k}`);
         const keys = [...new Set([...writes.map(([k]) => k), ...readBackKeys(key)])];
-        const before: [string, number][] = keys.map(k => [k, customValueService.getCache().get(k) ?? 0]);
+        // What the board was loaded with (or last read back), not the draft: a queued change just
+        // cleared may have put its value in the draft, and nothing is left to apply it.
+        const loaded = originalKeyboard?.custom_values ?? [];
+        const before: [string, number][] = keys.map(k => {
+            const entry = loaded.find(e => e.key === k);
+            return [k, entry ? customValueService.bytesToInt(entry.data, entry.data.length) : customValueService.getCache().get(k) ?? 0];
+        });
+        const label = found.item.label ?? key;
+        const message = (err: unknown) => err instanceof Error ? err.message : String(err);
+        let sent = false;
         setWriteError(null);
         for (const [k, v] of writes) inflight.current.set(k, v);
         show(writes); // shown at once; board state only from the read-back below
         const done = () => { for (const [k, v] of writes) if (inflight.current.get(k) === v) inflight.current.delete(k); };
         try {
             await send();
+            sent = true;
             const back = await readBack(keys);
             done();
             storeBoard(back);
             return true;
         } catch (err) {
             done();
+            if (sent) {
+                // The board took it and saved it; only the read-back failed.
+                for (const [k, v] of writes) customValueService.setCached(k, v);
+                storeBoard(writes);
+                setWriteError(`The board took ${label}, but Keybard couldn't read it back: ${message(err)}`);
+                return true;
+            }
             // Show what the board has, not the value that didn't land; if the board doesn't
-            // answer either, what was shown before (board state never took the new value).
+            // answer either, what it was loaded with (board state never took the new value).
             try {
                 storeBoard(await readBack(keys));
             } catch {
                 for (const [k, v] of before) customValueService.setCached(k, v);
-                show(before);
+                storeBoard(before);
             }
-            setWriteError(`The board didn't take ${found.item.label ?? key}: ${err instanceof Error ? err.message : String(err)}`);
+            setWriteError(`The board didn't take ${label}: ${message(err)}`);
             return false;
         }
-    }, [menu, isConnected, queue, clear, keyboard, setKeyboard, applyBoardState]);
+    }, [menu, isConnected, queue, clear, keyboard, originalKeyboard, setKeyboard, applyBoardState]);
 
     return { values, setValue, loading, error, writeError };
 }

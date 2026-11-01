@@ -615,6 +615,19 @@ def flow_errors_and_halves(browser, url):
     expect(page.locator("[data-write-error]")).to_be_visible(timeout=5000)
     expect(page.locator("[data-step='Palm rejection'] [data-step-value]")).to_have_text("Off", timeout=5000)
     assert page.evaluate("window.keybardFakeBoard.device.firmware.padPalm") == 0
+    # The write lands but its read-back fails: the board has it, and the message says just that.
+    page.wait_for_timeout(500)
+    page.evaluate("""() => { const d = window.keybardFakeBoard.device; const send = d.sendReport.bind(d); let left = 1;
+        d.sendReport = async (id, data) => { const b = new Uint8Array(data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
+            if (left > 0 && b[5] === 0xfe && b[6] === 0x08 && b[8] === 58) { left--; throw new Error('simulated read failure'); }
+            return send(id, data); }; }""")
+    press_slider(page, "Palm rejection", "ArrowRight", 1)
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padPalm === 4", timeout=5000)
+    expect(page.locator("[data-write-error]")).to_contain_text("couldn't read it back", timeout=5000)
+    expect(page.locator("[data-step='Palm rejection'] [data-step-value]")).to_have_text("over 4 channels")
+    press_slider(page, "Palm rejection", "ArrowLeft", 1)
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padPalm === 0", timeout=5000)
+    page.wait_for_timeout(500)
     # The left half stops answering: shown as gone after about a second; the right pad and the mode carry on.
     first = page.evaluate(BOXES_JS)
     page.evaluate("window.keybardFakeBoard.device.firmware.leftMissing = true")
@@ -626,7 +639,7 @@ def flow_errors_and_halves(browser, url):
     page.wait_for_timeout(300)
     assert page.evaluate(BOXES_JS) == first, "the layout moved after the half came back"
     assert no_leave_prompt(page), "leaving the page warns about settings already on the board"
-    assert not [e for e in errors if "simulated write failure" not in e], errors
+    assert not [e for e in errors if "simulated" not in e], errors
     context.close()
 
 
@@ -683,6 +696,33 @@ def flow_queued_then_dialog(browser, url):
     assert ((page.evaluate("window.keybardFakeBoard.device.firmware.padSetting") >> 3) & 15) == 1, f"the board ended at another hold time: writes {hold_writes(page)}"
     assert hold_writes(page) == [20], f"hold time writes {hold_writes(page)}"
     assert not errors, errors
+    context.close()
+    # Queued again, then a dialog write that fails along with its read-back. The queued change went
+    # (the dialog's write replaced it), so the dialog shows what the board was loaded with, and
+    # nothing is left to apply.
+    context, page, errors = open_page(browser, url, "panel=pointing", init=MANUAL_UPDATES)
+    hold = page.get_by_role("slider", name="Hold Time (ms)")
+    expect(hold).to_be_visible(timeout=15000)
+    hold.focus()
+    hold.press("End")  # 1500 ms, queued
+    page.wait_for_function(PENDING_JS, timeout=5000)
+    page.get_by_role("button", name=LINK).click()
+    expect(page.get_by_role("dialog", name=TITLE)).to_be_visible(timeout=5000)
+    page.evaluate("""() => { const d = window.keybardFakeBoard.device; const send = d.sendReport.bind(d); let left = 2;
+        d.sendReport = async (id, data) => { const b = new Uint8Array(data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
+            if (left > 0 && b[5] === 0xfe && (b[6] === 0x07 || b[6] === 0x08) && b[8] === 54) { left--; throw new Error('simulated write failure'); }
+            return send(id, data); }; }""")
+    step = page.get_by_role("slider", name="Hold time")
+    step.focus()
+    step.press("Home")  # 20 ms: the write fails
+    expect(page.locator("[data-write-error]")).to_be_visible(timeout=5000)
+    page.wait_for_timeout(300)
+    assert not page.evaluate(PENDING_JS), "a change is still waiting after the failed write"
+    assert step_value(page, "Hold time") == "300 ms", f"shown {step_value(page, 'Hold time')}, not the board's 300 ms"
+    page.keyboard.press("Escape")
+    expect(hold).to_have_attribute("aria-valuenow", "300", timeout=5000)
+    assert ((page.evaluate("window.keybardFakeBoard.device.firmware.padSetting") >> 3) & 15) == 0, "the board's hold time changed"
+    assert not [e for e in errors if "simulated write failure" not in e], errors
     context.close()
 
 
