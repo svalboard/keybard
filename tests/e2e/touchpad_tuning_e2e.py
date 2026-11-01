@@ -226,7 +226,7 @@ def flow_dead_zone(browser, url):
     page.wait_for_function("window.keybardFakeBoard.device.firmware.padTuning.tapMs === 175", timeout=5000)
     press_slider(page, "Hold time", "ArrowRight", 1)
     page.wait_for_function("((window.keybardFakeBoard.device.firmware.padSetting >> 3) & 15) === 7", timeout=5000)  # 350 ms
-    assert step_value(page, "Hold time") == "350 ms"
+    assert step_value(page, "Hold time") == "350 ms", step_value(page, "Hold time")
     assert not errors, errors
     context.close()
 
@@ -604,6 +604,7 @@ def flow_errors_and_halves(browser, url):
     page.locator("[data-pad] [data-palm]").first.wait_for(state="attached", timeout=30000)  # the resting palm, over 4 channels
     press_slider(page, "Palm rejection", "ArrowLeft", 1)
     page.wait_for_function("window.keybardFakeBoard.device.firmware.padPalm === 0", timeout=5000)
+    page.wait_for_timeout(500)  # that write's read-back done before the next failure is armed
     # The write and the read-back both fail (the cable drops): the old value comes back, the
     # error stays, and nothing claims the board has the new value (no unsaved edit either).
     page.evaluate("""() => { const d = window.keybardFakeBoard.device; const send = d.sendReport.bind(d); let left = 2;
@@ -619,7 +620,7 @@ def flow_errors_and_halves(browser, url):
     page.evaluate("window.keybardFakeBoard.device.firmware.leftMissing = true")
     expect(page.locator("[data-pad='left'] [data-pad-absent]")).to_be_visible(timeout=5000)
     expect(page.locator("[data-pad='right'] [data-pad-svg]")).to_be_visible()
-    expect(page.locator("[data-os-mode-note]")).to_be_visible()
+    expect(page.get_by_role("slider", name="Dead zone")).to_have_count(0)  # still touchpad mode (the error line holds the note's place)
     page.evaluate("window.keybardFakeBoard.device.firmware.leftMissing = false")
     expect(page.locator("[data-pad='left'] [data-pad-svg]")).to_be_visible(timeout=5000)
     page.wait_for_timeout(300)
@@ -795,7 +796,7 @@ def main() -> int:
                 lines = str(error).strip().splitlines() or [repr(error)]
                 if os.environ.get("E2E_TRACE"):
                     import traceback
-                    lines += traceback.format_exc().splitlines()[-8:]
+                    lines += [l for l in traceback.format_exc().splitlines() if "touchpad_tuning_e2e.py" in l][-3:]
                 print(f"FAIL {label}\n     {lines[0]}")
                 print("     " + "\n     ".join(lines[1:12]))
         if os.environ.get("SHOT_DIR"):
