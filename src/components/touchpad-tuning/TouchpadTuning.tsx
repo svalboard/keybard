@@ -114,12 +114,16 @@ function useLiveTouch(enabled: boolean, keyboard: KeyboardInfo | null | undefine
     const [live, setLive] = useState<LiveState>(NO_LIVE);
     const trackers = useRef({ left: new TouchTracker(), right: new TouchTracker() });
     const lastValid = useRef({ left: -Infinity, right: -Infinity });
+    const firstAt = useRef(Infinity);
     useEffect(() => { getPadTouch().setConnection(keyboard ?? null, connected); }, [keyboard, connected]);
     useEffect(() => {
         if (!enabled) return;
         const service = getPadTouch();
         const release = service.acquire();
+        firstAt.current = Infinity;
+        lastValid.current = { left: -Infinity, right: -Infinity };
         const unsubscribe = service.subscribe((report, at) => {
+            if (firstAt.current === Infinity) firstAt.current = at;
             setLive((prev) => {
                 const valid = [report.left, report.right].filter((b) => b.valid);
                 const padsOs = valid.length ? valid.some((b) => b.os) : prev.padsOs;
@@ -128,6 +132,11 @@ function useLiveTouch(enabled: boolean, keyboard: KeyboardInfo | null | undefine
                     // A pad that answered within the last second keeps its last picture through a
                     // report without it (a fresh start, a missed split read): it never blinks to "no touchpad".
                     if (!report[side].valid && prev[side].block.valid && at - lastValid.current[side] < PAD_GONE_MS) continue;
+                    // The first reads after the board starts following the pads have no pad yet: drawn empty for a moment.
+                    if (!report[side].valid && lastValid.current[side] === -Infinity && at - firstAt.current < PAD_GONE_MS) {
+                        next[side] = { ...prev[side], block: WAITING_BLOCK };
+                        continue;
+                    }
                     if (report[side].valid) lastValid.current[side] = at;
                     const t = trackers.current[side];
                     // Each pad's touch is read in the board's one mode (padsOs), not its own flag.
