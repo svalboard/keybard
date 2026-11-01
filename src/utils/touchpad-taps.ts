@@ -9,7 +9,7 @@
 // Pointing Device menu when the flag is set, and shows them only while a half
 // has a touchpad.
 import type { CustomUIMenuItem, KeyboardInfo } from "@/types/keyboard.types";
-import { hasPadTuning, PAD_DEAD_ZONE_KEY, PAD_SCROLL_KEY, PAD_TAP_MS_KEY, TUNE_TOUCHPAD_ACTION, TUNE_TOUCHPAD_LABEL } from "./touchpad-tuning";
+import { hasPadPalm, hasPadTuning, PAD_DEAD_ZONE_KEY, PAD_PALM_KEY, PAD_SCROLL_KEY, PAD_TAP_MS_KEY, TUNE_TOUCHPAD_ACTION, TUNE_TOUCHPAD_LABEL } from "./touchpad-tuning";
 
 /** GET_INFO byte 20 (feature_flags3) bit 4: VIA values 51-54. */
 export const SVIL_FLAG3_PAD_GESTURES = 0x10;
@@ -27,6 +27,20 @@ export const PAD_KEYS = [PAD_TAP_KEY, PAD_TWO_FINGER_KEY, PAD_HOLD_KEY, PAD_HOLD
 export const PAD_HOLD_MS = [300, 20, 50, 100, 150, 200, 250, 350, 400, 500, 600, 700, 800, 1000, 1200, 1500] as const;
 /** Press and hold's default hold time (firmware with the setting; older firmware held for 20 ms). */
 export const PAD_HOLD_DEFAULT_MS = PAD_HOLD_MS[0];
+
+/**
+ * A value Keybard adds to the menu's values (never sent to the board): 1 when
+ * every touchpad half reported touchpad mode at connect (0x2C flags bit 4,
+ * SVAL_POINTER_OS_TOUCHPAD).
+ */
+export const PADS_OS_KEY = "app_pads_os";
+const PADS_OS_IF = `{${PADS_OS_KEY}} == 1`;
+
+/** Every half with a touchpad reported that the computer drives it as a touchpad (Input Mode 3). */
+export function padsInTouchpadMode(kbinfo: KeyboardInfo | null | undefined): boolean {
+    const pads = kbinfo?.pointing_hardware?.halves.filter((h) => h.detected === "azoteq") ?? [];
+    return pads.length > 0 && pads.every((h) => h.osTouchpad);
+}
 
 export const TOUCHPAD_SECTION_LABEL = "Touchpad";
 export const TOUCHPAD_NOTE = "Windows and Linux use their own touchpad settings while the pads are in touchpad mode.";
@@ -51,27 +65,30 @@ function refs(items: CustomUIMenuItem[], out: { key: string; channel: number }[]
  * Pointing Devices doesn't show them (TUNING_HIDDEN_KEYS); the tuning view in
  * Settings does, with the link to it in their place.
  */
-export function touchpadTuningItems(channel: number): CustomUIMenuItem[] {
+export function touchpadTuningItems(channel: number, featureFlags4?: number | null): CustomUIMenuItem[] {
     return [
         { label: TUNE_TOUCHPAD_LABEL, type: "link", content: [TUNE_TOUCHPAD_ACTION] },
         { label: "Dead Zone (0.01 mm)", type: "range", options: [20, 400, 10], content: [PAD_DEAD_ZONE_KEY, channel, 55] },
         { label: "Tap Time (ms)", type: "range", options: [50, 1000, 25], content: [PAD_TAP_MS_KEY, channel, 56] },
         { label: "Scroll Start (0.01 mm)", type: "range", options: [0, 1000, 5], content: [PAD_SCROLL_KEY, channel, 57] },
+        // Palm rejection (VIA 58, GET_INFO byte 21 bit 0): an area in the chip's channels, 0 off.
+        ...(hasPadPalm(featureFlags4) ? [{ label: "Palm Rejection (channels)", type: "range" as const, options: [0, 56, 1], content: [PAD_PALM_KEY, channel, 58] }] : []),
     ];
 }
 
 /** The Touchpad section, on the channel the menu's own values use. */
-export function touchpadSection(channel: number, featureFlags3?: number | null): CustomUIMenuItem {
+export function touchpadSection(channel: number, featureFlags3?: number | null, featureFlags4?: number | null): CustomUIMenuItem {
     return {
         label: TOUCHPAD_SECTION_LABEL,
         note: TOUCHPAD_NOTE,
         content: [
-            { label: "Tap to Click", type: "toggle", content: [PAD_TAP_KEY, channel, 51] },
-            { label: "Two-Finger Tap to Right Click", type: "toggle", content: [PAD_TWO_FINGER_KEY, channel, 52] },
-            { label: "Press and Hold to Drag", type: "toggle", content: [PAD_HOLD_KEY, channel, 53] },
+            // Grayed out while the computer has the pads in touchpad mode: it makes its own taps then.
+            { label: "Tap to Click", type: "toggle", disabledIf: PADS_OS_IF, content: [PAD_TAP_KEY, channel, 51] },
+            { label: "Two-Finger Tap to Right Click", type: "toggle", disabledIf: PADS_OS_IF, content: [PAD_TWO_FINGER_KEY, channel, 52] },
+            { label: "Press and Hold to Drag", type: "toggle", disabledIf: PADS_OS_IF, content: [PAD_HOLD_KEY, channel, 53] },
             // Grayed out, not hidden, while press and hold is off: it keeps its time.
-            { label: "Hold Time (ms)", type: "range", options: [20, 1500, 10], disabledIf: `{${PAD_HOLD_KEY}} == 0`, content: [PAD_HOLD_MS_KEY, channel, 54] },
-            ...(hasPadTuning(featureFlags3) ? touchpadTuningItems(channel) : []),
+            { label: "Hold Time (ms)", type: "range", options: [20, 1500, 10], disabledIf: [`{${PAD_HOLD_KEY}} == 0`, PADS_OS_IF], content: [PAD_HOLD_MS_KEY, channel, 54] },
+            ...(hasPadTuning(featureFlags3) ? touchpadTuningItems(channel, featureFlags4) : []),
         ],
     };
 }
@@ -81,7 +98,7 @@ export function touchpadSection(channel: number, featureFlags3?: number | null):
  * firmware has the setting and its menu doesn't list it already. Otherwise
  * the same array.
  */
-export function withTouchpadTaps(menus: CustomUIMenuItem[], featureFlags3: number | undefined | null): CustomUIMenuItem[] {
+export function withTouchpadTaps(menus: CustomUIMenuItem[], featureFlags3: number | undefined | null, featureFlags4?: number | null): CustomUIMenuItem[] {
     if (!hasPadGestures(featureFlags3)) return menus;
     const index = menus.findIndex(menu => menu.label?.toLowerCase().includes("pointing"));
     if (index < 0) return menus;
@@ -93,7 +110,7 @@ export function withTouchpadTaps(menus: CustomUIMenuItem[], featureFlags3: numbe
     // After the pointers and auto mouse, before Scroll Settings and Advanced.
     const at = content.findIndex(item => item.label === "Scroll Settings" || item.label === "Advanced");
     const next = [...content];
-    next.splice(at < 0 ? next.length : at, 0, touchpadSection(channel, featureFlags3));
+    next.splice(at < 0 ? next.length : at, 0, touchpadSection(channel, featureFlags3, featureFlags4));
     const out = [...menus];
     out[index] = { ...menu, content: next };
     return out;

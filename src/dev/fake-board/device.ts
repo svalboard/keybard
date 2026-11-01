@@ -25,6 +25,8 @@ export interface FakeSvalboardOptions {
     padGestures?: boolean;
     /** An Azoteq touchpad on each half. Default false. */
     touchpad?: boolean;
+    /** The computer has both pads as a touchpad (Input Mode 3). Default false. */
+    padsOs?: boolean;
     /**
      * A board that ran turbo TURBO with both waits at 0 before this firmware:
      * seeded that way, fresh on every load (not saved), so the firmware's boot
@@ -157,6 +159,7 @@ export class FakeSvalboardDevice extends EventTarget {
             timingUsOnly: options.timingUsOnly ?? true,
             padGestures: options.padGestures ?? true,
             touchpad: options.touchpad ?? false,
+            padsOs: options.padsOs ?? false,
             onChange: (state) => { if (this.persisting) storeBoard(state); },
             factoryKeymap: seedKeymap(),
         });

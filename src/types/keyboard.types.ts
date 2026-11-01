@@ -31,6 +31,7 @@ export interface KeyboardInfo {
     leader_count?: number;                   // NEW
     feature_flags2?: number;                 // Second feature byte, after the storage flags; zero on older firmware
     feature_flags3?: number;                 // Third feature byte (GET_INFO byte 20); zero on older firmware
+    feature_flags4?: number;                 // Fourth feature byte (GET_INFO byte 21); zero on older firmware
     feature_flags?: number;                  // NEW: Svil feature flags
     keycode_version?: string;                // QMK keycode numbering the keycodes are in, e.g. "0.0.9"
     storage_reset?: boolean;                 // board reset its settings: its storage could not be read
@@ -398,7 +399,8 @@ export interface CustomUIMenuItem {
     /** App-provided: one plain line shown under a section's label. */
     note?: string;
     /** App-provided: the control is shown but grayed out and unusable while this is true (showIf syntax). */
-    disabledIf?: string;
+    /** Grayed out while this is true; with a list, while any is. */
+    disabledIf?: string | string[];
     /** App-provided: shown units per stored unit (1000 shows stored seconds as ms). Options stay in stored units. */
     displayScale?: number;
 }

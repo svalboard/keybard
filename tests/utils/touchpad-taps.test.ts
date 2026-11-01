@@ -4,7 +4,7 @@ import { selectPointingMenu } from '@/utils/pointing-menu';
 import { readBackKeys } from '@/utils/scan-timing';
 import {
     boardHasTouchpad, hasPadGestures, PAD_HOLD_DEFAULT_MS, PAD_HOLD_MS, PAD_HOLD_MS_KEY, PAD_KEYS, SVIL_FLAG3_PAD_GESTURES,
-    TOUCHPAD_NOTE, TOUCHPAD_SECTION_LABEL, withTouchpadTaps,
+    padsInTouchpadMode, TOUCHPAD_NOTE, TOUCHPAD_SECTION_LABEL, withTouchpadTaps,
 } from '@/utils/touchpad-taps';
 
 const pointing = (channel: number): CustomUIMenuItem => ({
@@ -83,7 +83,18 @@ describe('touchpad tap setting', () => {
         const section = (withTouchpadTaps([pointing(0)], 0x10)[0].content as CustomUIMenuItem[])[2];
         const hold = (section.content as CustomUIMenuItem[]).find(item => item.content?.[0] === PAD_HOLD_MS_KEY)!;
         expect(hold.showIf).toBeUndefined();
-        expect(hold.disabledIf).toBe('{id_pad_hold} == 0');
+        expect(hold.disabledIf).toEqual(['{id_pad_hold} == 0', '{app_pads_os} == 1']);
+    });
+
+    it('grays the chip switches out while every touchpad half is in touchpad mode', () => {
+        const section = (withTouchpadTaps([pointing(0)], 0x10)[0].content as CustomUIMenuItem[])[2];
+        for (const item of section.content as CustomUIMenuItem[]) {
+            if (item.type === 'toggle') expect(item.disabledIf).toBe('{app_pads_os} == 1');
+        }
+        const half = (osTouchpad: boolean) => ({ usb: true, side: 'right', builtFor: 'none', detected: 'azoteq', sensorStarted: true, auto: true, productId: 40, inverseProductId: 0, osTouchpad });
+        expect(padsInTouchpadMode({ pointing_hardware: { halves: [half(true), half(true)] } } as never)).toBe(true);
+        expect(padsInTouchpadMode({ pointing_hardware: { halves: [half(true), half(false)] } } as never)).toBe(false);
+        expect(padsInTouchpadMode(null)).toBe(false);
     });
 
     it('reads the hold time back after a write', () => {

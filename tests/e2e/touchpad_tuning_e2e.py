@@ -24,9 +24,21 @@ the chip's tap and press-and-hold rules. Run with
   7. No animation beyond the live finger and timer.
   8. Layout: no sideways overflow at 390 and 1440 px, light and dark, from
      both entries; ink unlike the page.
-  9. No layout shift: with 50+ touches played, the dialog, the controls, the
-     pads and their close-ups keep their size and place, the touch lists
-     scroll inside their own boxes, and nothing scrolls sideways (390, 1440).
+  9. No layout shift: with 50+ touches played, one, two and three fingers
+     among them, the dialog, the controls, the pads and their close-ups keep
+     their size and place, the touch lists scroll inside their own boxes,
+     and nothing scrolls sideways (390, 1440).
+ 10. Every finger (svalboard/qmk "Touchpad fingers", 0x2D page 2): two and
+     three fingers drawn at once, numbered; two fingers get the scroll-start
+     ring around their start centroid and a line between them, no dead zone;
+     three get no guides. The list says "Two-finger tap ✓" and "started
+     after ... mm".
+ 11. Palm rejection (VIA 58): off by default; set to 10 channels it writes,
+     the resting palm is drawn as a palm and listed as one.
+ 12. Touchpad mode (?fakeBoard=touchpad-os): one line about the system's
+     touchpad settings, the chip's gesture settings grayed out (and the tap
+     switches in Pointing Devices), palm rejection still live, and the list
+     says what the chip would have done.
 
 E2E_URL and E2E_SKIP_BUILD work as in fake_board_e2e.py. SHOT_DIR=path saves
 screenshots. Needs Python Playwright with Chromium. Exits 1 when a check fails.
@@ -249,8 +261,12 @@ BOXES_JS = """() => {
         return [r.x, r.y, r.width, r.height].map(v => Math.round(v * 2) / 2);
     });
     return { dialog: box("[data-touchpad-tuning-dialog]"), controls: box("[data-tuning-controls]"), steps: box("[data-step]"),
-             pads: box("[data-pad-svg]"), closeUps: box("[data-close-up]"), lists: box("[data-outcomes]") };
+             pads: box("[data-pad-svg]"), closeUps: box("[data-close-up]"), captions: box("[data-close-caption]"), lists: box("[data-outcomes]"),
+             osLines: box("[data-pad-os]"), osNote: box("[data-os-mode-note]") };
 }"""
+
+
+FINGERS_JS = "() => Math.max(0, ...[...document.querySelectorAll('[data-pad]')].map(p => p.querySelectorAll('[data-finger]').length))"
 
 
 def flow_stable(browser, url):
@@ -261,9 +277,10 @@ def flow_stable(browser, url):
         page.wait_for_timeout(500)
         first = page.evaluate(BOXES_JS)
         page.evaluate("window.keybardFakeBoard.device.firmware.touchSpeed = 6")
-        changes, touches, started = [], 0, time.time()
-        while touches < 50 and time.time() - started < 90:
-            page.wait_for_timeout(200)
+        changes, touches, started, counts = [], 0, time.time(), set()
+        while (touches < 50 or not {1, 2, 3} <= counts) and time.time() - started < 120:
+            page.wait_for_timeout(100)
+            counts.add(page.evaluate(FINGERS_JS))
             now = page.evaluate(BOXES_JS)
             if now != first:
                 changes.append({k: (first[k], now[k]) for k in first if first[k] != now[k]})
@@ -272,12 +289,109 @@ def flow_stable(browser, url):
         side = page.evaluate("""[document.documentElement, document.querySelector('[data-touchpad-tuning-body]')]
             .map(e => e.scrollWidth - e.clientWidth)""")
         assert touches >= 50, f"{width}px: only {touches} touches played"
+        assert {1, 2, 3} <= counts, f"{width}px: finger counts seen {sorted(counts)}"
         assert not changes, f"{width}px: layout moved: {changes[0]}"
         assert all(n > 5 and scrolls for n, scrolls in lists), f"{width}px: the lists don't scroll in place: {lists}"
         assert max(side) <= 1, f"{width}px: sideways scroll {side}"
         assert not errors, errors
         context.close()
-        print(f"     {width}px: {touches} touches, nothing moved")
+        print(f"     {width}px: {touches} touches, 1-3 fingers, nothing moved")
+
+
+def wait_fingers(page: Page, n: int, gesture: str, timeout=30000, extra=""):
+    page.wait_for_function(f"""() => {{
+        const p = document.querySelector("[data-pad='left']");
+        return !!p && p.dataset.gesture === '{gesture}' && p.querySelectorAll('[data-finger]').length === {n}
+            && !!p.querySelector("[data-touch='down']") {extra};
+    }}""", timeout=timeout)
+
+
+def flow_fingers(browser, url):
+    context, page, errors = open_page(browser, url, FROM_SETTINGS)
+    left = page.locator("[data-pad='left']")
+    expect(left.locator("[data-pad-svg]")).to_be_visible(timeout=15000)
+    wait_fingers(page, 2, "two")
+    assert left.locator("[data-two-line]").count() == 1, "no line between the two fingers"
+    assert left.locator("[data-close-up='two'] [data-scroll-ring]").count() == 1, "no scroll-start ring"
+    assert left.locator("[data-dead-zone]").count() == 0, "a dead zone with two fingers"
+    labels = left.locator("[data-finger-label]").all_inner_texts()
+    assert sorted(labels) == ["1", "2"], labels
+    assert "scroll start" in left.locator("[data-close-caption]").inner_text()
+    wait_fingers(page, 3, "many")
+    assert left.locator("[data-scroll-ring], [data-dead-zone], [data-two-line]").count() == 0, "guides with three fingers"
+    assert sorted(left.locator("[data-finger-label]").all_inner_texts()) == ["1", "2", "3"]
+    left.locator("[data-outcome='right']", has_text="Two-finger tap ✓").first.wait_for(state="attached", timeout=30000)
+    left.locator("[data-outcome='scroll']", has_text="started after").first.wait_for(state="attached", timeout=30000)
+    left.locator("[data-outcome='multi']", has_text="Three fingers").first.wait_for(state="attached", timeout=30000)
+    assert page.locator("[data-palm]").count() == 0, "a palm with palm rejection off"
+    assert not errors, errors
+    context.close()
+
+
+def flow_palm(browser, url):
+    context, page, errors = open_page(browser, url, FROM_SETTINGS)
+    expect(page.locator("[data-step='Palm rejection']")).to_be_visible(timeout=15000)
+    assert step_value(page, "Palm rejection") == "Off"
+    press_slider(page, "Palm rejection", "ArrowRight", 7)  # off, 4, 5, 6, 7, 8, 9, 10
+    page.wait_for_function("window.keybardFakeBoard.device.firmware.padPalm === 10", timeout=5000)
+    page.wait_for_timeout(300)
+    assert saves_after(page, 58) >= 1, "palm rejection not saved"
+    assert step_value(page, "Palm rejection") == "over 10 channels"
+    page.locator("[data-pad] [data-palm]").first.wait_for(state="attached", timeout=30000)
+    page.locator("[data-pad] [data-outcome='palm']", has_text="Palm: 14 channels, over 10").first.wait_for(state="attached", timeout=30000)
+    assert not errors, errors
+    context.close()
+
+
+def flow_os_mode(browser, url):
+    context, page, errors = open_page(browser, url, FROM_SETTINGS, board="fakeBoard=touchpad-os")
+    note = page.locator("[data-os-mode-note]")
+    expect(note).to_be_visible(timeout=15000)
+    expect(note).to_contain_text("Windows or Linux decides taps and scrolling")
+    for label in ("Dead zone", "Tap time", "Hold time", "Scroll start"):
+        expect(page.locator(f"[data-step='{label}']")).to_have_attribute("data-disabled", "true")
+    assert page.locator("[data-step='Palm rejection'][data-disabled]").count() == 0, "palm rejection grayed out"
+    page.locator("[data-pad] [data-outcome][data-os]").first.wait_for(state="attached", timeout=30000)
+    page.wait_for_timeout(12000)
+    texts = page.locator("[data-pad='left'] [data-outcome]").all_inner_texts()
+    assert texts and all(t.startswith(("Chip would", "Palm", "Three", "Four", "Five")) for t in texts), texts
+    expect(page.locator("[data-pad='left'] [data-pad-os]")).to_be_visible()
+    context.close()
+    # Pointing Devices: the chip's tap switches and hold time gray out too.
+    context, page, errors3 = open_page(browser, url, "panel=pointing", board="fakeBoard=touchpad-os")
+    for name in ("Tap to Click", "Two-Finger Tap to Right Click", "Press and Hold to Drag"):
+        expect(page.get_by_role("group", name=name, exact=True)).to_have_attribute("aria-disabled", "true", timeout=15000)
+    errors += errors3
+    context.close()
+    context, page, errors2 = open_page(browser, url, FROM_SETTINGS)
+    expect(page.locator("[data-step='Dead zone']")).to_be_visible(timeout=15000)
+    page.wait_for_timeout(500)
+    assert not page.locator("[data-os-mode-note]").is_visible(), "the touchpad-mode line shows as a mouse"
+    assert page.locator("[data-step][data-disabled]").count() == 0, "a control grayed out as a mouse"
+    context.close()
+    context, page, errors4 = open_page(browser, url, "panel=pointing")
+    expect(page.get_by_role("group", name="Tap to Click", exact=True)).to_be_visible(timeout=15000)
+    assert page.locator("[role='group'][aria-disabled]").count() == 0, "a switch grayed out as a mouse"
+    errors2 += errors4
+    assert not errors and not errors2, errors + errors2
+    context.close()
+
+
+def fingers_shots(browser, url, out):
+    for scheme in ("light", "dark"):
+        for n, gesture in ((1, "one"), (2, "two"), (3, "many")):
+            context, page, _ = open_page(browser, url, FROM_SETTINGS, scheme=scheme)
+            expect(view(page)).to_be_visible(timeout=15000)
+            # Two fingers: the scroll, its average travel past the half of the scroll start.
+            extra = "&& (() => { const t = p.querySelector('[data-travel-ring]'); return !!t && Number(t.getAttribute('r')) > 60; })()" if n == 2 else ""
+            wait_fingers(page, n, gesture, timeout=40000, extra=extra)
+            page.screenshot(path=os.path.join(out, f"fingers-{n}-{scheme}.png"))
+            context.close()
+    context, page, _ = open_page(browser, url, FROM_SETTINGS, board="fakeBoard=touchpad-os")
+    expect(view(page)).to_be_visible(timeout=15000)
+    page.wait_for_timeout(12000)
+    page.screenshot(path=os.path.join(out, "touchpad-mode-light.png"))
+    context.close()
 
 
 def shots(browser, url, out):
@@ -315,8 +429,14 @@ def main() -> int:
         ("6. no touchpad, or older firmware: no entry, no chip, no link", flow_hidden),
         ("7. no animation beyond the live finger and timer", flow_no_animation),
         ("8. layout: 390 and 1440 px, light and dark, no overflow", flow_layout_checks),
-        ("9. no layout shift over 50+ touches, lists scroll in place (390, 1440)", flow_stable),
+        ("9. no layout shift over 50+ touches and 1-3 fingers, lists scroll in place (390, 1440)", flow_stable),
+        ("10. every finger: two with the scroll-start ring and a line, three with none; listed", flow_fingers),
+        ("11. palm rejection: off, then 10 channels writes and marks the resting palm", flow_palm),
+        ("12. touchpad mode: the system line, chip settings grayed out, the chip's would-be results", flow_os_mode),
     ]
+    only = os.environ.get("E2E_ONLY")
+    if only:
+        flows = [f for f in flows if f[0].split(".")[0] in only.split(",")]
     failed = 0
     with app_url() as url, sync_playwright() as p:
         browser = p.chromium.launch()
@@ -329,10 +449,15 @@ def main() -> int:
             except Exception as error:  # noqa: BLE001 - report every flow
                 failed += 1
                 lines = str(error).strip().splitlines() or [repr(error)]
+                if os.environ.get("E2E_TRACE"):
+                    import traceback
+                    lines += traceback.format_exc().splitlines()[-8:]
                 print(f"FAIL {label}\n     {lines[0]}")
                 print("     " + "\n     ".join(lines[1:12]))
         if os.environ.get("SHOT_DIR"):
-            shots(browser, url, os.environ["SHOT_DIR"])
+            if not os.environ.get("SHOT_FINGERS_ONLY"):
+                shots(browser, url, os.environ["SHOT_DIR"])
+            fingers_shots(browser, url, os.environ["SHOT_DIR"])
             print(f"screenshots in {os.environ['SHOT_DIR']}")
         browser.close()
     print(f"{len(flows) - failed} passed, {failed} failed")

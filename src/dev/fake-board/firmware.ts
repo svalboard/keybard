@@ -14,7 +14,7 @@ import {
     MACRO_COUNT, ROWS, TABLE_ENTRIES, TAP_DANCE_SIZE, type FakeBoardState,
 } from "./board";
 import {
-    ChipModel, nearest, packPadTouch, PAD_DEAD_ZONE_MM100, PAD_HEIGHT_MM100, PAD_SCROLL_MM100, PAD_TAP_MS, PAD_WIDTH_MM100, type ChipSettings,
+    ChipModel, nearest, packPadFingers, packPadTouch, PAD_DEAD_ZONE_MM100, PAD_HEIGHT_MM100, PAD_SCROLL_MM100, PAD_TAP_MS, PAD_WIDTH_MM100, type ChipSettings,
 } from "@/utils/touchpad-tuning";
 import { SCRIPT_MS, scriptSample } from "./touch-script";
 import { DEFINITION_BYTES, FRAGMENT_INSTANCE_COUNT, POINTING_AZOTEQ_FRAGMENT_ID, POINTING_FRAGMENT_INSTANCES, POINTING_NONE_FRAGMENT_ID } from "./definition";
@@ -55,6 +55,9 @@ export const FLAG3_PAD_GESTURES = 0x10;
 // flags3 bits 5 and 6: the touchpad tuning (VIA 55-57) and the touch page of 0x2D.
 export const FLAG3_PAD_TUNING = 0x20;
 export const FLAG3_PAD_TOUCH = 0x40;
+// flags3 bit 7: the fingers page of 0x2D (page 2); flags4 (GET_INFO byte 21) bit 0: the palm rejection (VIA 58).
+export const FLAG3_PAD_FINGERS = 0x80;
+export const FLAG4_PAD_PALM = 0x01;
 // pad_gestures.c sval_pad_hold_ms: the hold times the board stores, the default (300) first.
 /** The build's own scroll distance on the native touchpad (50 pixels at 2048 across 43 mm). */
 const FAKE_SCROLL_BUILD_MM100 = 105;
@@ -133,6 +136,8 @@ export interface FakeFirmwareOptions {
     padGestures?: boolean;
     /** An Azoteq touchpad on each half (0x2C, 0x18), instead of no pointing module. Default false. */
     touchpad?: boolean;
+    /** The computer has both pads as a touchpad (Input Mode 3): the touch pages say so. Default false. */
+    padsOs?: boolean;
 }
 
 /** A Sval table (TABLE_SCAN ids 0-4): its storage, entry size and "in use" test. */
@@ -206,6 +211,10 @@ export class FakeSvalFirmware {
     readonly timingUsOnly: boolean;
     readonly padGestures: boolean;
     readonly touchpad: boolean;
+    /** The computer has both pads as a touchpad (the touch pages' OS bits); tests may flip it. */
+    padsOs: boolean;
+    /** The palm rejection (VIA 58): an area in channels, 0 off (the default). */
+    padPalm = 0;
     /**
      * The touchpad tap setting byte (pad_gestures.h): bit 0 tap off, bit 1
      * two-finger tap off, bit 2 press and hold off, bits 3-6 the hold time
@@ -261,6 +270,7 @@ export class FakeSvalFirmware {
         this.timingUsOnly = options.timingUsOnly ?? true;
         this.padGestures = options.padGestures ?? true;
         this.touchpad = options.touchpad ?? false;
+        this.padsOs = options.padsOs ?? false;
         this.onChange = options.onChange;
         if (this.timingUsOnly) this.migrateTiming();
         this.factoryKeymap = options.factoryKeymap;
@@ -342,7 +352,7 @@ export class FakeSvalFirmware {
 
     get featureFlags3(): number {
         return (this.typingPause ? FLAG3_TYPING_PAUSE : 0) | (this.flickerLatch ? FLAG3_FLICKER_LATCH : 0) | (this.padGestures ? FLAG3_PAD_GESTURES : 0)
-            | (this.padGestures && this.touchpad ? FLAG3_PAD_TUNING | FLAG3_PAD_TOUCH : 0);
+            | (this.padGestures && this.touchpad ? FLAG3_PAD_TUNING | FLAG3_PAD_TOUCH | FLAG3_PAD_FINGERS : 0);
     }
 
     private count(row: number, col: number) {
@@ -714,6 +724,16 @@ export class FakeSvalFirmware {
             }
             return;
         }
+        if (this.padGestures && this.touchpad && valueId === 58) {
+            if (command === 0x07) {
+                this.customWrites.push({ id: valueId, value: Array.from(value.subarray(0, 2)) });
+                this.padPalm = Math.min(56, value[0] | (value[1] << 8));
+            } else if (command === 0x08) {
+                value[0] = this.padPalm;
+                value[1] = 0;
+            }
+            return;
+        }
         if (this.padGestures && this.touchpad && valueId >= 55 && valueId <= 57) {
             this.padTuningValue(command, valueId, value);
             return;
@@ -766,24 +786,36 @@ export class FakeSvalFirmware {
         return {
             deadZone: this.padTuning.deadZone, tapMs: this.padTuning.tapMs, holdMs: PAD_HOLD_MS[(s >> 3) & 0x0f],
             tapOn: (s & 1) === 0, twoFingerOn: (s & 2) === 0, holdOn: (s & 4) === 0,
+            scrollStart: this.padTuning.scroll || FAKE_SCROLL_BUILD_MM100,
         };
+    }
+
+    /** Each pad's chip model, fed every 10 ms sample of the script up to now (at most one loop's worth). */
+    private padModels(now: number): ChipModel[] {
+        if (!this.padPlayers) {
+            this.padPlayers = [0, SCRIPT_MS / 2].map((offset) => ({ model: new ChipModel(() => this.chipSettings()), fedTo: now, offset }));
+        }
+        return this.padPlayers.map((p) => {
+            for (let t = Math.max(p.fedTo, now - SCRIPT_MS); t <= now; t += 10) {
+                const loop = (t + p.offset) % SCRIPT_MS;
+                p.model.sample({ ...scriptSample(loop), t });
+            }
+            p.fedTo = Math.max(p.fedTo, now + 10);
+            return p.model;
+        });
+    }
+
+    /** The fingers page of 0x2D (docs/protocol.md "Touchpad fingers"), from the scripted touches. */
+    private fingersPage(out: Uint8Array): void {
+        const now = this.now() * this.touchSpeed;
+        const [left, right] = this.padModels(now).map((m) => ({ ...m.readFingers(now), os: this.padsOs }));
+        out.set(packPadFingers({ palm: this.padPalm, left, right }));
     }
 
     /** The touch page of 0x2D (docs/protocol.md "Touchpad touch"), from the scripted touches. */
     private touchPage(out: Uint8Array): void {
         const now = this.now() * this.touchSpeed;
-        if (!this.padPlayers) {
-            this.padPlayers = [0, SCRIPT_MS / 2].map((offset) => ({ model: new ChipModel(() => this.chipSettings()), fedTo: now, offset }));
-        }
-        const blocks = this.padPlayers.map((p) => {
-            // Feed every 10 ms sample since the last read (at most one loop's worth).
-            for (let t = Math.max(p.fedTo, now - SCRIPT_MS); t <= now; t += 10) {
-                const loop = (t + p.offset) % SCRIPT_MS;
-                p.model.sample({ ...scriptSample(loop), t });
-            }
-            p.fedTo = now + 10;
-            return p.model.read(now);
-        });
+        const blocks = this.padModels(now).map((m) => ({ ...m.read(now), os: this.padsOs }));
         const c = this.chipSettings();
         out.set(packPadTouch({
             tapOn: c.tapOn, twoFingerOn: c.twoFingerOn, holdOn: c.holdOn, elapsedMs: 0,
@@ -959,6 +991,7 @@ export class FakeSvalFirmware {
                 data[18] = s.storageFlags & 0x05; // bit 1 (write failed) never happens here
                 data[19] = this.featureFlags2;
                 if (length > 20) data[20] = this.featureFlags3;
+                if (length > 21) data[21] = this.padGestures && this.touchpad ? FLAG4_PAD_PALM : 0;
                 break;
             }
             case 0x2a: // STORAGE_RESET_CLEAR
@@ -1068,8 +1101,10 @@ export class FakeSvalFirmware {
                         // flags: reported | auto (the build drives whatever answers); built for none; none answered.
                         if (this.touchpad) {
                             // An Azoteq pad on each half (IQS550: product 40).
-                            out.set([0x01 | 0x04 | 0x08, 5, 5, 0, 40], 1);
-                            out.set([0x01 | 0x02 | 0x04 | 0x08, 5, 5, 0, 40], 6);
+                            // Bit 4: the computer drives the pad as a touchpad (?fakeBoard=touchpad-os).
+                            const os = this.padsOs ? 0x10 : 0;
+                            out.set([0x01 | 0x04 | 0x08 | os, 5, 5, 0, 40], 1);
+                            out.set([0x01 | 0x02 | 0x04 | 0x08 | os, 5, 5, 0, 40], 6);
                         } else {
                             out.set([0x01 | 0x08, 0, 3, 0, 0], 1);
                             out.set([0x01 | 0x02 | 0x08, 0, 3, 0, 0], 6);
@@ -1081,6 +1116,7 @@ export class FakeSvalFirmware {
                 const page = length > 3 ? data[3] : 0;
                 if (length > 2) data.subarray(2, length).fill(0);
                 if (page === 1 && this.padGestures && this.touchpad && length >= 2 + 56) this.touchPage(data.subarray(2, length));
+                if (page === 2 && this.padGestures && this.touchpad && length >= 2 + 56) this.fingersPage(data.subarray(2, length));
                 break;
             }
             case 0x2f: // POINTING_CONTACTS (not advertised): format 0

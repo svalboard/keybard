@@ -6,7 +6,7 @@ import { useKeyboard } from "@/contexts/KeyboardContext";
 import { useMenuValues } from "@/hooks/useMenuValues";
 import { openTouchpadTuning } from "@/components/touchpad-tuning/tuning-open";
 import type { CustomUIMenuItem } from "@/types/keyboard.types";
-import { boardHasTouchpad, PAD_KEYS } from "@/utils/touchpad-taps";
+import { boardHasTouchpad, PAD_KEYS, PADS_OS_KEY, padsInTouchpadMode } from "@/utils/touchpad-taps";
 import { PAD_TUNING_KEYS, TUNE_TOUCHPAD_ACTION } from "@/utils/touchpad-tuning";
 
 // The tuning values are shown in Settings, never here; on a board without a
@@ -41,7 +41,15 @@ const DynamicMenuPanel: React.FC<DynamicMenuPanelProps> = ({ menuIndex, horizont
         (menu?.content ?? []) as CustomUIMenuItem[], section, hasTouchpad ? TUNING_HIDDEN : PAD_HIDDEN,
     ), [menu, section, hasTouchpad]);
     const { values, setValue: handleValueChange, loading, error } = useMenuValues(menu);
-    const shownValues = useMemo(() => withEffectiveTiming(values), [values]);
+    // Touchpad mode at connect: the chip's tap switches gray out (touchpad-taps.ts PADS_OS_KEY).
+    const padsOs = padsInTouchpadMode(keyboard);
+    const shownValues = useMemo(() => {
+        const v = withEffectiveTiming(values);
+        if (!padsOs) return v;
+        const out = new Map(v);
+        out.set(PADS_OS_KEY, 1);
+        return out;
+    }, [values, padsOs]);
 
     const handleButtonClick = useCallback(async (key: string) => {
         if (key === TUNE_TOUCHPAD_ACTION) { openTouchpadTuning(); return; }

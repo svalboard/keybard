@@ -38,6 +38,8 @@ export interface PointingHalfReport {
     sensorStarted: boolean;
     /** The build drives whichever module answers at startup, so builtFor is the one it chose. */
     auto: boolean;
+    /** The computer drives this half's touchpad as a touchpad (native touchpad builds; flags bit 4). */
+    osTouchpad?: boolean;
     /** One-image firmware: the half has no side yet, so `side` means nothing. Not drawn as a hand. */
     noSide?: boolean;
     productId: number;
@@ -53,6 +55,7 @@ const FLAG_REPORTED = 0x01;
 const FLAG_LEFT = 0x02;
 const FLAG_INIT_OK = 0x04;
 const FLAG_AUTO = 0x08;
+const FLAG_OS_TOUCHPAD = 0x10;
 const FLAG_NO_SIDE = 0x20;
 const BLOCK_SIZE = 5;
 
@@ -71,6 +74,7 @@ function parseHalf(bytes: Uint8Array, offset: number, usb: boolean): PointingHal
         sensorStarted: (flags & FLAG_INIT_OK) !== 0,
         auto: (flags & FLAG_AUTO) !== 0,
         ...((flags & FLAG_NO_SIDE) !== 0 ? { noSide: true } : {}),
+        ...((flags & FLAG_OS_TOUCHPAD) !== 0 ? { osTouchpad: true } : {}),
         productId: bytes[offset + 3],
         inverseProductId: bytes[offset + 4],
     };

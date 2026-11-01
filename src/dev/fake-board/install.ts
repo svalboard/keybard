@@ -20,7 +20,8 @@ function showBadge(choice: FakeBoardChoice, wipe: () => void) {
         : choice === "no-pause" ? `${FAKE_BOARD_PRODUCT_NAME}, firmware that can't pause typing`
         : choice === "turbo6" ? `${FAKE_BOARD_PRODUCT_NAME}, updated from turbo 6`
         : choice === "leader0" ? `${FAKE_BOARD_PRODUCT_NAME}, leader timeout stored as 0`
-        : choice === "touchpad" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads` : FAKE_BOARD_PRODUCT_NAME;
+        : choice === "touchpad" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads`
+        : choice === "touchpad-os" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads in touchpad mode` : FAKE_BOARD_PRODUCT_NAME;
     const reset = document.createElement("button");
     reset.type = "button";
     reset.textContent = "Reset";
@@ -41,10 +42,12 @@ export function installFakeBoard(choice: FakeBoardChoice): HIDDevice {
     // "turbo6" is this firmware too, on a board that ran turbo 6 with both scan waits at 0 before it.
     // "leader0" is this firmware with the leader timeout of 0 that older firmware's settings reset stored.
     // "touchpad" is this firmware with an Azoteq touchpad on each half.
-    const current = choice === "combo-names" || choice === "turbo6" || choice === "leader0" || choice === "touchpad";
+    // "touchpad-os" is the same, with the computer driving both pads as a touchpad (Input Mode 3).
+    const pads = choice === "touchpad" || choice === "touchpad-os";
+    const current = choice === "combo-names" || choice === "turbo6" || choice === "leader0" || pads;
     const device = new FakeSvalboardDevice({ comboLabels: choice !== "old", typingPause: current, flickerLatch: current, debounceSwitch: current,
         timingUsOnly: current, seedTurbo: choice === "turbo6" ? 6 : undefined, seedLeaderZero: choice === "leader0", reportLength: current ? 64 : 32,
-        padGestures: current, touchpad: choice === "touchpad" });
+        padGestures: current, touchpad: pads, padsOs: choice === "touchpad-os" });
     const wipe = () => {
         device.forgetSettings();
         window.location.reload();

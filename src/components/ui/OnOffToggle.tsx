@@ -9,20 +9,24 @@ interface Props {
     description?: string;
     /** "sm" for the compact editor bar. */
     size?: "default" | "sm";
+    /** Shown but grayed out and unusable. */
+    disabled?: boolean;
 }
 
-const OnOffToggle: FC<Props> = ({ value, onToggle, className, label, description, size = "default" }) => {
+const OnOffToggle: FC<Props> = ({ value, onToggle, className, label, description, size = "default", disabled = false }) => {
     return (
         <div
             role="group"
             aria-label={label}
             aria-description={description}
-            className={cn("flex flex-row items-center bg-gray-100 dark:bg-neutral-800 rounded-full p-0.5 w-fit border border-gray-200 dark:border-neutral-500", className)}
+            aria-disabled={disabled || undefined}
+            className={cn(disabled && "pointer-events-none opacity-50", "flex flex-row items-center bg-gray-100 dark:bg-neutral-800 rounded-full p-0.5 w-fit border border-gray-200 dark:border-neutral-500", className)}
             onClick={(e) => e.stopPropagation()}
         >
             <button
                 type="button"
                 aria-pressed={value}
+                disabled={disabled}
                 onClick={(e) => {
                     e.stopPropagation();
                     if (!value) onToggle(true);
@@ -40,6 +44,7 @@ const OnOffToggle: FC<Props> = ({ value, onToggle, className, label, description
             <button
                 type="button"
                 aria-pressed={!value}
+                disabled={disabled}
                 onClick={(e) => {
                     e.stopPropagation();
                     if (value) onToggle(false);
