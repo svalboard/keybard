@@ -7,7 +7,7 @@ import { prepareImport } from "@/services/import-preflight";
 import type { KeyboardInfo } from "@/types/keyboard.types";
 import type { PendingChange } from "@/services/changes.service";
 import type { RestoreReport } from "@/services/updater/flow";
-import { boardStateFromSvil, restoreBoardState, type BoardStateTarget } from "./board-state";
+import { boardStateFromSvil, restoreBoardState, TouchpadModeNotRestored, type BoardStateTarget } from "./board-state";
 
 export interface RestoreTarget {
     keyboard: KeyboardInfo;
@@ -35,6 +35,15 @@ export async function restoreLayoutToBoard(svil: string, t: RestoreTarget): Prom
     await importService.syncWithKeyboard(plan.keyboard, t.keyboard, (desc, cb, metadata) => t.queue(desc, cb, { ...metadata, deferCommit: true }), { keyboardService });
     if (!(await t.commit())) throw new Error("Some of the layout couldn't be written.");
     t.markSaved?.(plan.keyboard);
-    if (t.applyBoardState) await restoreBoardState(boardStateFromSvil(svil), { keyboard: t.keyboard, applyBoardState: t.applyBoardState, readPointing: t.readPointing ?? ((probe) => keyboardService.getPointingHardware(probe)) });
-    return { trimmed: plan.warnings, replaced: plan.replaced, unavailable: plan.unavailable };
+    const report: RestoreReport = { trimmed: plan.warnings, replaced: plan.replaced, unavailable: plan.unavailable };
+    // The layout is back either way: a mode that didn't go back carries the layout's notes.
+    if (t.applyBoardState) {
+        try {
+            await restoreBoardState(boardStateFromSvil(svil), { keyboard: t.keyboard, applyBoardState: t.applyBoardState, readPointing: t.readPointing ?? ((probe) => keyboardService.getPointingHardware(probe)) });
+        } catch (error) {
+            if (error instanceof TouchpadModeNotRestored) error.report = report;
+            throw error;
+        }
+    }
+    return report;
 }

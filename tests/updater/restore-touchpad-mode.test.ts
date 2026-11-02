@@ -134,6 +134,9 @@ describe('the restore of other backups', () => {
         const ed = editor(after);
         const ch = changes(true);
         await expect(restoreLayoutToBoard(svil, { keyboard: after, ...ed, queue: ch.queue, commit: ch.commit })).rejects.toThrow(/Your layout is back, but not Touchpad mode. It was Built-in gestures before the update/);
+        // The error carries the layout restore's report, for the update's Done screen.
+        const again = await restoreLayoutToBoard(svil, { keyboard: after, ...ed, queue: ch.queue, commit: ch.commit }).catch((e) => e);
+        expect(again.report?.trimmed).toEqual([]);
         expect(modeOf(ed.e.draft)).toBe(PAD_MODE_AUTO);
         expect(modeOf(ed.e.loaded)).toBe(PAD_MODE_AUTO);
     });

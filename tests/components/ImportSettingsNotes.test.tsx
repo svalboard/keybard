@@ -49,4 +49,19 @@ describe("settings notes after an import or restore", () => {
         expect(container.textContent).not.toMatch(/didn't fit/);
         expect(screen.getByTestId("settings-replaced")).toBeTruthy();
     });
+
+    it("the Done screen with the touchpad mode not back: the layout line, the trimmed lines and settings notes as usual, then the mode line", () => {
+        const state = { title: "Update to x4.3", toTag: "x4.3", target: "both", result: {
+            tags: {}, layout: "restored", trimmed: ["Combos: 6 of 8 (this firmware has 6)"], replaced, unavailable: ["Tapping Term"],
+            sides: { usb: "right", other: "left", wrote: ["right"], migrated: false },
+            touchpadMode: "It was Built-in gestures before the update. Set it again in Settings → Touchpad tuning.",
+        } } as unknown as FlowState;
+        const { container } = render(<ResultView state={state} onDone={() => {}} />);
+        expect(container.textContent).toContain("Your layout is back on the keyboard. Each half knows its side now.");
+        expect(container.textContent).toContain("Combos: 6 of 8 (this firmware has 6)");
+        expect(screen.getByTestId("settings-replaced")).toBeTruthy();
+        expect(screen.getByTestId("settings-unavailable")).toBeTruthy();
+        expect(container.textContent).toContain("Your layout is back, but not Touchpad mode.");
+        expect(screen.getByTestId("touchpad-mode-not-back").textContent).toBe("It was Built-in gestures before the update. Set it again in Settings → Touchpad tuning.");
+    });
 });

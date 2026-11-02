@@ -5,6 +5,7 @@
 // import path ignores the field.
 
 import { customValueService } from "@/services/custom-value.service";
+import type { RestoreReport } from "@/services/updater/flow";
 import type { KeyboardInfo } from "@/types/keyboard.types";
 import { PAD_MODE_KEY, PAD_MODE_LABELS } from "@/utils/touchpad-tuning";
 
@@ -46,11 +47,13 @@ export function boardStateFromSvil(svil: string): BoardState | null {
     }
 }
 
-/** The layout is back; the touchpad mode isn't. The update's sheet says so (F24). */
+/** The layout is back; the touchpad mode isn't. The update's Done screen says so beside the restore's notes. */
 export class TouchpadModeNotRestored extends Error {
     readonly name = "TouchpadModeNotRestored";
     /** What to do, for the sheet under its title. */
     readonly hint: string;
+    /** What the layout restore reported (restoreLayoutToBoard fills it in). */
+    report?: RestoreReport;
     constructor(readonly mode: number, readonly reason: string) {
         const hint = `It was ${PAD_MODE_LABELS[mode] ?? mode} before the update. Set it again in Settings → Touchpad tuning.`;
         super(`Your layout is back, but not Touchpad mode. ${hint}`);

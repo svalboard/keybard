@@ -13,9 +13,11 @@ import { ReplyTimeoutError, type Clock, type UpdaterTransport } from "./transpor
 
 export interface FakeHostOptions {
     restoreFails?: boolean;
-    /** The layout goes back, but the board won't take the touchpad mode (F24). */
+    /** The layout goes back, but the board won't take the touchpad mode. */
     modeRestoreFails?: boolean;
     trimmed?: string[];
+    replaced?: RestoreReport["replaced"];
+    unavailable?: string[];
 }
 
 export class FakeHost implements FlowHost {
@@ -64,9 +66,14 @@ export class FakeHost implements FlowHost {
         this.restores++;
         this.events.push("restore");
         if (this.o.restoreFails) throw new Error("The keyboard stopped answering while the layout was written.");
-        if (this.o.modeRestoreFails) throw new TouchpadModeNotRestored(1, "the board reads 0");
         this.board.restoreSettings();
-        return { trimmed: this.o.trimmed ?? [] };
+        const report: RestoreReport = { trimmed: this.o.trimmed ?? [], replaced: this.o.replaced ?? [], unavailable: this.o.unavailable ?? [] };
+        if (this.o.modeRestoreFails) {
+            const error = new TouchpadModeNotRestored(1, "the board reads 0");
+            error.report = report;
+            throw error;
+        }
+        return report;
     }
 }
 

@@ -44,6 +44,11 @@ export function ResultView({ state, onDone }: { state: FlowState; onDone: () => 
                 </Problem>
             )}
             <ImportSettingsNotes replaced={r.replaced} unavailable={r.unavailable} done />
+            {r.touchpadMode && (
+                <Problem title="Your layout is back, but not Touchpad mode.">
+                    <p data-testid="touchpad-mode-not-back">{r.touchpadMode}</p>
+                </Problem>
+            )}
             <div className="flex justify-end"><Button variant="kb-primary" onClick={onDone}>Done</Button></div>
         </div>
     );
