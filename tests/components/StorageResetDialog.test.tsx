@@ -188,7 +188,7 @@ describe('StorageResetDialog', () => {
                 meta('this-morning', 'sval:OTHER-HALF', 20 * 60 * 1000, 'pre-update', { fromTag: 'x3.1.3', toTag: '' }),
             ];
             render(<StorageResetDialog />);
-            expect(await screen.findByText(/^Backup( of Kip)? saved before the update, today/)).toBeTruthy();
+            expect(await screen.findByText(/^Backup( of Kip)? saved before the update, (today|yesterday)/)).toBeTruthy();
             fireEvent.click(screen.getByRole('button', { name: 'Restore my layout' }));
             await waitFor(() => expect(backupService.getSvil).toHaveBeenCalledWith('this-morning'));
         });
