@@ -439,6 +439,11 @@ def flow_mode_toggle(browser, url):
     built_in.click()
     expect(confirm).to_be_visible(timeout=5000)
     assert page.evaluate("document.activeElement && document.activeElement.hasAttribute('data-cancel')"), "Cancel is not the default"
+    # The body: plain sentences, the pads stay a touchpad device.
+    expect(confirm).to_contain_text("Your computer's touchpad features won't apply on Windows and Linux")
+    expect(confirm).to_contain_text("Macs work the same either way. We recommend Automatic.")
+    expect(confirm).not_to_contain_text("stop being a touchpad")
+    assert confirm.locator("ul, li, b, strong").count() == 0, "the body is not plain sentences"
     page.keyboard.press("Escape")
     expect(confirm).to_be_hidden(timeout=5000)
     expect(tuning).to_be_visible()
