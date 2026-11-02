@@ -48,7 +48,9 @@ export function installFakeBoard(choice: FakeBoardChoice): HIDDevice {
     // "touchpad-434" is v4.3.4's firmware on that board: the touch page only.
     const pads = choice === "touchpad" || choice === "touchpad-gestures" || choice === "touchpad-434";
     const current = choice === "combo-names" || choice === "turbo6" || choice === "leader0" || pads;
-    const device = new FakeSvalboardDevice({ comboLabels: choice !== "old", typingPause: current, flickerLatch: current, debounceSwitch: current,
+    // The debug console command (0x3E) came after v4.3.4.
+    const device = new FakeSvalboardDevice({ comboLabels: choice !== "old", typingPause: current, flickerLatch: current,
+        debugConsole: current && choice !== "touchpad-434", debounceSwitch: current,
         timingUsOnly: current, seedTurbo: choice === "turbo6" ? 6 : undefined, seedLeaderZero: choice === "leader0", reportLength: current ? 64 : 32,
         padGestures: current, touchpad: pads, hostTouchpad: choice === "touchpad" || choice === "touchpad-434", multiFinger: choice !== "touchpad-434" });
     const wipe = () => {

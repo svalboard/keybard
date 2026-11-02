@@ -9,9 +9,13 @@ interface Props {
     description?: string;
     /** "sm" for the compact editor bar. */
     size?: "default" | "sm";
+    /** The value isn't known: neither side is pressed, and either one sets it. */
+    unknown?: boolean;
 }
 
-const OnOffToggle: FC<Props> = ({ value, onToggle, className, label, description, size = "default" }) => {
+const OnOffToggle: FC<Props> = ({ value, onToggle, className, label, description, size = "default", unknown = false }) => {
+    const isOn = !unknown && value;
+    const isOff = !unknown && !value;
     return (
         <div
             role="group"
@@ -22,15 +26,15 @@ const OnOffToggle: FC<Props> = ({ value, onToggle, className, label, description
         >
             <button
                 type="button"
-                aria-pressed={value}
+                aria-pressed={isOn}
                 onClick={(e) => {
                     e.stopPropagation();
-                    if (!value) onToggle(true);
+                    if (!isOn) onToggle(true);
                 }}
                 className={cn(
                     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 py-1 text-[10px] uppercase tracking-wide rounded-full transition-all font-bold",
                     size === "sm" ? "px-2" : "px-3",
-                    value
+                    isOn
                         ? "bg-kb-active text-kb-active-fg shadow-sm"
                         : "text-gray-500 hover:text-kb-ink dark:text-neutral-400 dark:hover:text-kb-ink"
                 )}
@@ -39,15 +43,15 @@ const OnOffToggle: FC<Props> = ({ value, onToggle, className, label, description
             </button>
             <button
                 type="button"
-                aria-pressed={!value}
+                aria-pressed={isOff}
                 onClick={(e) => {
                     e.stopPropagation();
-                    if (value) onToggle(false);
+                    if (!isOff) onToggle(false);
                 }}
                 className={cn(
                     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 py-1 text-[10px] uppercase tracking-wide rounded-full transition-all font-bold",
                     size === "sm" ? "px-2" : "px-3",
-                    !value
+                    isOff
                         ? "bg-kb-active text-kb-active-fg shadow-sm"
                         : "text-gray-500 hover:text-kb-ink dark:text-neutral-400 dark:hover:text-kb-ink"
                 )}

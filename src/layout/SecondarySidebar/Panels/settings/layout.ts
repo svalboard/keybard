@@ -17,7 +17,7 @@ import { COMBO_COLORBLIND_SETTING, COMBO_INDICATOR_SETTING } from "@/lib/comboIn
  * description for this page) or a block this page renders itself. To add a
  * preference, add its definition to SETTINGS and its name to a section here.
  */
-export type SettingsBlock = "hardware" | "touchpad" | "firmware" | "board" | "backups" | "typing" | "about";
+export type SettingsBlock = "hardware" | "touchpad" | "firmware" | "board" | "backups" | "typing" | "about" | "debug";
 
 export type SettingsRow =
     | { setting: string; label?: string; description?: string }
@@ -120,6 +120,8 @@ export const SETTINGS_PAGE: SettingsSection[] = [
         defaultOpen: false,
         rows: [
             { block: "about" },
+            // Only on firmware with the debug console command (DebugConsoleRow).
+            { block: "debug" },
             { setting: "scan-lab", label: "Scan Lab", description: "Measure key scanning and sensor timing." },
             { setting: "key-proof-sheet", label: "Key proof sheet", description: "Every key rendering at every size, for visual checks." },
         ],
@@ -129,6 +131,21 @@ export const SETTINGS_PAGE: SettingsSection[] = [
 
 /** Sections shown only on some boards: Touchpad tuning needs a touchpad and firmware with the setting. */
 export const CONDITIONAL_SECTIONS = ["touchpad"] as const;
+
+/** Blocks shown only on some boards: the debug console needs firmware with the command. */
+export const CONDITIONAL_BLOCKS = ["debug"] as const;
+
+/**
+ * The page this board shows: without a touchpad (and the setting) no Touchpad
+ * tuning card, and without the debug console command no Debug console row.
+ * Search and rendering both use it, so a search never finds a hidden row.
+ */
+export function shownPage(board: { touchpad: boolean; debugConsole: boolean }, page: SettingsSection[] = SETTINGS_PAGE): SettingsSection[] {
+    return page
+        .filter((section) => section.id !== "touchpad" || board.touchpad)
+        .map((section) => (board.debugConsole ? section
+            : { ...section, rows: section.rows.filter((row) => !("block" in row && row.block === "debug")) }));
+}
 
 /**
  * Settings that have a definition in SETTINGS but are deliberately not on this

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SETTINGS } from '../../src/contexts/SettingsContext';
-import { HARDWARE_OPEN_SETTING, SETTINGS_PAGE, SETTINGS_SHOWN_ELSEWHERE, blocksOnPage, sectionStateSetting, settingsOnPage, CONDITIONAL_SECTIONS } from '../../src/layout/SecondarySidebar/Panels/settings/layout';
+import { HARDWARE_OPEN_SETTING, SETTINGS_PAGE, SETTINGS_SHOWN_ELSEWHERE, blocksOnPage, sectionStateSetting, settingsOnPage, CONDITIONAL_SECTIONS, shownPage } from '../../src/layout/SecondarySidebar/Panels/settings/layout';
+import { searchSettings } from '../../src/layout/SecondarySidebar/Panels/settings/search';
 
 describe('Settings page declaration', () => {
     const onPage = settingsOnPage();
@@ -49,7 +50,7 @@ describe('Settings page declaration', () => {
     });
 
     it('holds Hardware, Typing behavior and every block once', () => {
-        expect([...blocksOnPage()].sort()).toEqual(['about', 'backups', 'board', 'firmware', 'hardware', 'touchpad', 'typing']);
+        expect([...blocksOnPage()].sort()).toEqual(['about', 'backups', 'board', 'debug', 'firmware', 'hardware', 'touchpad', 'typing']);
     });
 
     it('shows Touchpad tuning only on some boards, beside Hardware', () => {
@@ -68,5 +69,26 @@ describe('Settings page declaration', () => {
         const keys = SETTINGS_PAGE.map((s) => sectionStateSetting(s.id));
         expect(new Set(keys).size).toBe(keys.length);
         for (const key of keys) expect(SETTINGS.find((d) => d.name === key), key).toBeUndefined();
+    });
+});
+
+describe('the page a board shows', () => {
+    const lookup = () => undefined;
+    const debugRow = (page: ReturnType<typeof shownPage>) => page.find((s) => s.id === 'about')!.rows.some((r) => 'block' in r && r.block === 'debug');
+
+    it('has the Debug console row and the Touchpad card only when the board has them', () => {
+        expect(debugRow(shownPage({ touchpad: false, debugConsole: true }))).toBe(true);
+        expect(debugRow(shownPage({ touchpad: false, debugConsole: false }))).toBe(false);
+        expect(shownPage({ touchpad: false, debugConsole: true }).some((s) => s.id === 'touchpad')).toBe(false);
+        expect(shownPage({ touchpad: true, debugConsole: true }).some((s) => s.id === 'touchpad')).toBe(true);
+    });
+
+    it('never finds the Debug console row in search when the firmware has no command', () => {
+        for (const query of ['debug console', 'console', 'logging']) {
+            const hidden = searchSettings(shownPage({ touchpad: false, debugConsole: false }), query, lookup);
+            expect(hidden?.get('about')?.rows.has('block:debug') ?? false).toBe(false);
+            const shown = searchSettings(shownPage({ touchpad: false, debugConsole: true }), query, lookup);
+            expect(shown?.get('about')?.rows.has('block:debug')).toBe(true);
+        }
     });
 });
