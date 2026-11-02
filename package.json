@@ -22,6 +22,7 @@
         "test:e2e:firmware": "python tests/e2e/firmware_manual_e2e.py",
         "test:e2e:fake-board": "python tests/e2e/fake_board_e2e.py",
         "test:e2e:tester-pause": "python tests/e2e/tester_pause_e2e.py",
+        "test:e2e:debug-console": "python tests/e2e/debug_console_e2e.py",
         "test:e2e:backups": "python tests/e2e/backups_panel_e2e.py",
         "test:e2e:scanlab-debounce": "python tests/e2e/scanlab_debounce_e2e.py",
         "test:e2e:scan-timing": "python tests/e2e/scan_timing_e2e.py",

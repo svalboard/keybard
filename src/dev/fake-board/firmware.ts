@@ -59,6 +59,8 @@ export const FLAG3_PAD_TOUCH = 0x40;
 export const FLAG3_PAD_FINGERS = 0x80;
 export const FLAG4_PAD_PALM = 0x01;
 export const FLAG4_PAD_MODE = 0x02;
+// flags4 bit 2: the debug console's debug flag (Sval 0x3E).
+export const FLAG4_DEBUG_CONSOLE = 0x04;
 // pad_gestures.c sval_pad_hold_ms: the hold times the board stores, the default (300) first.
 /** The build's own scroll distance on the native touchpad (50 pixels at 2048 across 43 mm). */
 const FAKE_SCROLL_BUILD_MM100 = 105;
@@ -121,6 +123,8 @@ export interface FakeFirmwareOptions {
     typingPause?: boolean;
     /** Firmware with the flicker latch (Sval 0x3D, GET_INFO byte 20 bit 3). Default true. */
     flickerLatch?: boolean;
+    /** Firmware with the debug console command (Sval 0x3E, GET_INFO byte 21 bit 2). Default true. */
+    debugConsole?: boolean;
     /**
      * Firmware with the optical debounce switch: VIA value 48 and Scan Lab
      * STATUS byte 23 (svalboard.c, scanlab.c). Default true.
@@ -210,6 +214,11 @@ export class FakeSvalFirmware {
     readonly comboLabels: boolean;
     readonly typingPause: boolean;
     readonly flickerLatch: boolean;
+    readonly debugConsole: boolean;
+    /** QMK's debug_enable: RAM only, off whenever the board starts (keyboard_post_init_kb). */
+    debugEnable = false;
+    /** Every DEBUG_CONSOLE request's op, oldest first. */
+    readonly debugRequests: number[] = [];
     readonly debounceSwitch: boolean;
     readonly timingUsOnly: boolean;
     readonly padGestures: boolean;
@@ -286,6 +295,7 @@ export class FakeSvalFirmware {
         this.comboLabels = options.comboLabels ?? true;
         this.typingPause = options.typingPause ?? true;
         this.flickerLatch = options.flickerLatch ?? true;
+        this.debugConsole = options.debugConsole ?? true;
         this.debounceSwitch = options.debounceSwitch ?? true;
         this.timingUsOnly = options.timingUsOnly ?? true;
         this.padGestures = options.padGestures ?? true;
@@ -1024,7 +1034,8 @@ export class FakeSvalFirmware {
                 data[18] = s.storageFlags & 0x05; // bit 1 (write failed) never happens here
                 data[19] = this.featureFlags2;
                 if (length > 20) data[20] = this.featureFlags3;
-                if (length > 21) data[21] = this.padGestures && this.touchpad && this.multiFinger ? FLAG4_PAD_PALM | FLAG4_PAD_MODE : 0;
+                if (length > 21) data[21] = (this.padGestures && this.touchpad && this.multiFinger ? FLAG4_PAD_PALM | FLAG4_PAD_MODE : 0)
+                    | (this.debugConsole ? FLAG4_DEBUG_CONSOLE : 0);
                 break;
             }
             case 0x2a: // STORAGE_RESET_CLEAR
@@ -1225,6 +1236,19 @@ export class FakeSvalFirmware {
                     break;
                 }
                 if (length > 3) this.flickerCommand(data.subarray(2), length - 2);
+                break;
+            case 0x3e: // DEBUG_CONSOLE (debug_console.c): [op] -> [op][status][flag]
+                if (!this.debugConsole) {
+                    data[1] = SVAL_CMD_ERROR;
+                    break;
+                }
+                if (length > 4) {
+                    const op = data[2];
+                    this.debugRequests.push(op);
+                    if (op === 0 || op === 1) this.debugEnable = op === 1;
+                    data[3] = op <= 2 ? 0 : 1;
+                    data[4] = this.debugEnable ? 1 : 0;
+                }
                 break;
             case 0x3c: // TYPING_PAUSE
                 if (!this.typingPause) {

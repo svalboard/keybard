@@ -17,6 +17,8 @@ export interface FakeSvalboardOptions {
     typingPause?: boolean;
     /** Firmware with the flicker latch (Sval 0x3D). Default true. */
     flickerLatch?: boolean;
+    /** Firmware with the debug console command (Sval 0x3E). Default true. */
+    debugConsole?: boolean;
     /** Firmware with the optical debounce switch (VIA value 48, Scan Lab STATUS byte 23). Default true. */
     debounceSwitch?: boolean;
     /** Firmware with the scan timing in µs only (feat/timing-us-only). Default true. */
@@ -157,6 +159,7 @@ export class FakeSvalboardDevice extends EventTarget {
             comboLabels: options.comboLabels ?? true,
             typingPause: options.typingPause ?? true,
             flickerLatch: options.flickerLatch ?? true,
+            debugConsole: options.debugConsole ?? true,
             debounceSwitch: options.debounceSwitch ?? true,
             timingUsOnly: options.timingUsOnly ?? true,
             padGestures: options.padGestures ?? true,

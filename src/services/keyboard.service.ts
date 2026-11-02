@@ -13,6 +13,7 @@ import { payloadCapacity } from "./hid-report";
 import LZMA from "js-lzma";
 import { assertSupportedSvilProto } from "@/utils/unsupported-firmware";
 import { CMD_SVIL_FLICKER_LATCH, FLICKER_COUNTS, FLICKER_READ, hasFlickerLatch, parseFlickerCounts, parseFlickerRead, type FlickerCounts, type FlickerRead } from "@/services/flicker-latch";
+import { CMD_SVIL_DEBUG_CONSOLE, hasDebugConsole, parseDebugConsoleReply, type DebugConsoleReply } from "@/services/debug-console";
 import { CMD_SVIL_TYPING_PAUSE, hasTypingPause, parseTypingPauseReply, type TypingPauseReply } from "@/services/typing-pause";
 import { parsePointingHardware, SVIL_FLAG2_POINTING_HARDWARE } from "@/utils/pointing-hardware";
 import { parsePointingContacts, SVIL_FLAG2_POINTING_CONTACTS, withPadContacts, type PointingContactsReport } from "@/utils/pointing-contacts";
@@ -533,6 +534,21 @@ export class KeyboardService {
     async typingPause(op: number): Promise<TypingPauseReply | null> {
         const reply = await this.usb.sendSvil(CMD_SVIL_TYPING_PAUSE, [op], { uint8: true }) as Uint8Array;
         return parseTypingPauseReply(reply);
+    }
+
+    /** Whether the board can turn its debug console's key events on and off (DEBUG_CONSOLE). */
+    hasDebugConsole(kbinfo: KeyboardInfo | null | undefined): boolean {
+        return hasDebugConsole(kbinfo?.feature_flags4);
+    }
+
+    /**
+     * DEBUG_CONSOLE (0x3E): op 0 off, 1 on, 2 read. Written at once, never
+     * queued. Null on a reply that isn't one (firmware without the command
+     * answers 0xFF).
+     */
+    async debugConsole(op: number): Promise<DebugConsoleReply | null> {
+        const reply = await this.usb.sendSvil(CMD_SVIL_DEBUG_CONSOLE, [op], { uint8: true }) as Uint8Array;
+        return parseDebugConsoleReply(reply, op);
     }
 
     /** Whether the board reports every raw switch change (FLICKER_LATCH) over this connection. */

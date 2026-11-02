@@ -51,6 +51,7 @@ export const BLOCK_SYNONYMS: Record<SettingsBlock, string[]> = {
     backups: ["backups", "back up now", "restore", "recover", "undo", "history", "snapshot", "backup folder"],
     typing: typingBehaviorWords(),
     about: ["version", "help", "manual", "docs", "community", "discord", "support", "release notes", "credits"],
+    debug: ["debug console", "debug", "console", "log", "logging", "key events", "troubleshooting", "diagnostics", "hid_listen"],
 };
 
 export const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim();

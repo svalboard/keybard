@@ -49,7 +49,7 @@ describe('Settings page declaration', () => {
     });
 
     it('holds Hardware, Typing behavior and every block once', () => {
-        expect([...blocksOnPage()].sort()).toEqual(['about', 'backups', 'board', 'firmware', 'hardware', 'touchpad', 'typing']);
+        expect([...blocksOnPage()].sort()).toEqual(['about', 'backups', 'board', 'debug', 'firmware', 'hardware', 'touchpad', 'typing']);
     });
 
     it('shows Touchpad tuning only on some boards, beside Hardware', () => {

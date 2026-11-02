@@ -17,7 +17,7 @@ import { COMBO_COLORBLIND_SETTING, COMBO_INDICATOR_SETTING } from "@/lib/comboIn
  * description for this page) or a block this page renders itself. To add a
  * preference, add its definition to SETTINGS and its name to a section here.
  */
-export type SettingsBlock = "hardware" | "touchpad" | "firmware" | "board" | "backups" | "typing" | "about";
+export type SettingsBlock = "hardware" | "touchpad" | "firmware" | "board" | "backups" | "typing" | "about" | "debug";
 
 export type SettingsRow =
     | { setting: string; label?: string; description?: string }
@@ -120,6 +120,8 @@ export const SETTINGS_PAGE: SettingsSection[] = [
         defaultOpen: false,
         rows: [
             { block: "about" },
+            // Only on firmware with the debug console command (DebugConsoleRow).
+            { block: "debug" },
             { setting: "scan-lab", label: "Scan Lab", description: "Measure key scanning and sensor timing." },
             { setting: "key-proof-sheet", label: "Key proof sheet", description: "Every key rendering at every size, for visual checks." },
         ],

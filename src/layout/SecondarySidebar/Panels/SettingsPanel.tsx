@@ -13,6 +13,7 @@ import BoardIdentitySection from "./BoardIdentitySection";
 import ClustersPanel from "./ClustersPanel";
 import TypingBehaviorPanel from "./TypingBehaviorPanel";
 import AboutSection from "./settings/AboutSection";
+import DebugConsoleRow from "./settings/DebugConsoleRow";
 import { openTouchpadTuning } from "@/components/touchpad-tuning/tuning-open";
 import { Button } from "@/components/ui/button";
 import { boardHasTouchpad } from "@/utils/touchpad-taps";
@@ -172,6 +173,8 @@ const SettingsPanel = () => {
                 return <div className="px-3 pt-3 pb-1"><TypingBehaviorPanel /></div>;
             case "about":
                 return <AboutSection />;
+            case "debug":
+                return <DebugConsoleRow highlight={highlight} />;
         }
     };
 
