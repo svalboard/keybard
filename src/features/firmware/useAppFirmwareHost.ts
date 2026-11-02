@@ -18,6 +18,7 @@ import { usbSideHost } from "@/services/side-host";
 import type { KeyboardInfo } from "@/types/keyboard.types";
 import { getKeyLabel } from "@/utils/layers";
 import { restoreLayoutToBoard } from "./restore";
+import { withBoardState } from "./board-state";
 import type { FirmwareUiHost, UpdateBackup } from "./useFirmwareUpdate";
 
 /** <board name>-<installed release>-<date>.svil */
@@ -154,7 +155,7 @@ function createAppHost(ref: { current: AppState }): FirmwareUiHost {
             const { kb: k, changes: ch } = ref.current;
             const current = k.keyboard;
             if (!current) throw new Error("The keyboard didn't finish loading.");
-            return restoreLayoutToBoard(svil, { keyboard: current, setKeyboard: k.setKeyboard, queue: ch.queue, commit: ch.commit, markSaved: k.markAsSaved });
+            return restoreLayoutToBoard(svil, { keyboard: current, setKeyboard: k.setKeyboard, queue: ch.queue, commit: ch.commit, markSaved: k.markAsSaved, applyBoardState: k.applyBoardState });
         },
         async keymapBlank() {
             // After the wipe's reconnect: wait for the load, then every key on every layer is KC_NO.
@@ -168,7 +169,8 @@ function createAppHost(ref: { current: AppState }): FirmwareUiHost {
         async makeBackup({ fromTag, toTag }): Promise<UpdateBackup> {
             const { kb: k, backups: b } = ref.current;
             if (!k.keyboard) throw new Error("No layout loaded.");
-            const svil = serializeForBackup(k.keyboard);
+            // The layout plus the board's touchpad mode, which only the update's restore puts back.
+            const svil = withBoardState(serializeForBackup(k.keyboard), k.keyboard);
             // Parse it back before Start is enabled.
             await fileService.loadFile(new File([svil], "check.svil", { type: "application/json" }));
             const boardName = b.board?.name ?? k.keyboard.name ?? "Svalboard";

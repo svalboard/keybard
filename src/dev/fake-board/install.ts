@@ -20,7 +20,9 @@ function showBadge(choice: FakeBoardChoice, wipe: () => void) {
         : choice === "no-pause" ? `${FAKE_BOARD_PRODUCT_NAME}, firmware that can't pause typing`
         : choice === "turbo6" ? `${FAKE_BOARD_PRODUCT_NAME}, updated from turbo 6`
         : choice === "leader0" ? `${FAKE_BOARD_PRODUCT_NAME}, leader timeout stored as 0`
-        : choice === "touchpad" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads` : FAKE_BOARD_PRODUCT_NAME;
+        : choice === "touchpad" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads`
+        : choice === "touchpad-gestures" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads on built-in gestures`
+        : choice === "touchpad-434" ? `${FAKE_BOARD_PRODUCT_NAME}, touchpads, v4.3.4 firmware` : FAKE_BOARD_PRODUCT_NAME;
     const reset = document.createElement("button");
     reset.type = "button";
     reset.textContent = "Reset";
@@ -40,11 +42,15 @@ export function installFakeBoard(choice: FakeBoardChoice): HIDDevice {
     // This firmware has 64-byte reports, the typing pause, the flicker latch and the debounce switch; the older choices have none of them.
     // "turbo6" is this firmware too, on a board that ran turbo 6 with both scan waits at 0 before it.
     // "leader0" is this firmware with the leader timeout of 0 that older firmware's settings reset stored.
-    // "touchpad" is this firmware with an Azoteq touchpad on each half.
-    const current = choice === "combo-names" || choice === "turbo6" || choice === "leader0" || choice === "touchpad";
+    // "touchpad" is this firmware with an Azoteq touchpad on each half, and a computer that asks
+    // for touchpad mode (Input Mode 3) as Windows and Linux do; "touchpad-gestures" the same
+    // board where it never asks (a Mac), so the pads run their built-in gestures.
+    // "touchpad-434" is v4.3.4's firmware on that board: the touch page only.
+    const pads = choice === "touchpad" || choice === "touchpad-gestures" || choice === "touchpad-434";
+    const current = choice === "combo-names" || choice === "turbo6" || choice === "leader0" || pads;
     const device = new FakeSvalboardDevice({ comboLabels: choice !== "old", typingPause: current, flickerLatch: current, debounceSwitch: current,
         timingUsOnly: current, seedTurbo: choice === "turbo6" ? 6 : undefined, seedLeaderZero: choice === "leader0", reportLength: current ? 64 : 32,
-        padGestures: current, touchpad: choice === "touchpad" });
+        padGestures: current, touchpad: pads, hostTouchpad: choice === "touchpad" || choice === "touchpad-434", multiFinger: choice !== "touchpad-434" });
     const wipe = () => {
         device.forgetSettings();
         window.location.reload();

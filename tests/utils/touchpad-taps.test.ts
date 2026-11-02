@@ -4,7 +4,7 @@ import { selectPointingMenu } from '@/utils/pointing-menu';
 import { readBackKeys } from '@/utils/scan-timing';
 import {
     boardHasTouchpad, hasPadGestures, PAD_HOLD_DEFAULT_MS, PAD_HOLD_MS, PAD_HOLD_MS_KEY, PAD_KEYS, SVIL_FLAG3_PAD_GESTURES,
-    TOUCHPAD_NOTE, TOUCHPAD_SECTION_LABEL, withTouchpadTaps,
+    padsInTouchpadMode, TOUCHPAD_NOTE, TOUCHPAD_SECTION_LABEL, withTouchpadTaps,
 } from '@/utils/touchpad-taps';
 
 const pointing = (channel: number): CustomUIMenuItem => ({
@@ -47,7 +47,7 @@ describe('touchpad tap setting', () => {
             const section = (out[0].content as CustomUIMenuItem[])[2];
             expect(section.note).toBe(TOUCHPAD_NOTE);
             const refs = keys([section]);
-            expect(refs).toEqual([...PAD_KEYS]);
+            expect(refs).toEqual(PAD_KEYS.filter(k => k !== 'id_pad_touchpad_mode'));
             const flat = JSON.stringify(section);
             for (const id of [51, 52, 53, 54]) expect(flat).toContain(`,${channel},${id}]`);
             // The original menu is unchanged.
@@ -82,8 +82,24 @@ describe('touchpad tap setting', () => {
         expect(PAD_HOLD_MS).toContain(20);
         const section = (withTouchpadTaps([pointing(0)], 0x10)[0].content as CustomUIMenuItem[])[2];
         const hold = (section.content as CustomUIMenuItem[]).find(item => item.content?.[0] === PAD_HOLD_MS_KEY)!;
-        expect(hold.showIf).toBeUndefined();
+        expect(hold.showIf).toBe('{app_pads_os} == 0');
         expect(hold.disabledIf).toBe('{id_pad_hold} == 0');
+    });
+
+    it('hides the built-in gesture switches while the pads are in touchpad mode, and puts the mode first', () => {
+        const section = (withTouchpadTaps([pointing(0)], 0x10)[0].content as CustomUIMenuItem[])[2];
+        for (const item of section.content as CustomUIMenuItem[]) {
+            if (item.type === 'toggle') expect(item.showIf).toBe('{app_pads_os} == 0');
+        }
+        const withMode = (withTouchpadTaps([pointing(0)], 0x30, 0x03)[0].content as CustomUIMenuItem[])[2];
+        const first = (withMode.content as CustomUIMenuItem[])[0];
+        expect(first).toMatchObject({ label: 'Touchpad Mode', type: 'dropdown', options: ['Automatic', 'Built-in gestures'] });
+        expect(first.content).toEqual(['id_pad_touchpad_mode', 0, 59]);
+        expect(first.showIf).toBeUndefined();
+        const half = (osTouchpad: boolean) => ({ usb: true, side: 'right', builtFor: 'none', detected: 'azoteq', sensorStarted: true, auto: true, productId: 40, inverseProductId: 0, osTouchpad });
+        expect(padsInTouchpadMode({ pointing_hardware: { halves: [half(true), half(true)] } } as never)).toBe(true);
+        expect(padsInTouchpadMode({ pointing_hardware: { halves: [half(true), half(false)] } } as never)).toBe(false);
+        expect(padsInTouchpadMode(null)).toBe(false);
     });
 
     it('reads the hold time back after a write', () => {

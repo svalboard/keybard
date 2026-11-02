@@ -184,6 +184,22 @@ describe("the install flow", () => {
         expect(state.sent2A).toBe(false);
     });
 
+    it("the layout is back but the touchpad mode isn't: Done, with the restore's notes and sides as a partial restore shows them, plus the mode line", async () => {
+        const notes = { trimmed: ["Combos: 6 of 8 (this firmware has 6)"], replaced: [{ from: "Scan speed (preset 6)", to: "Scan wait (15 / 15 µs)", release: "x4.3" }], unavailable: ["Tapping Term"] };
+        const normal = await run({ setup: { host: { ...notes } } });
+        const { host, state } = await run({ setup: { host: { ...notes, modeRestoreFails: true } } });
+        expect(state.failure).toBeFalsy();
+        expect(state.step).toBe("done");
+        expect(host.clears).toBe(1);
+        expect(state.sent2A).toBe(true);
+        const { touchpadMode, ...rest } = state.result!;
+        expect(touchpadMode).toBe("It was Built-in gestures before the update. Set it again in Settings → Touchpad tuning.");
+        expect(rest).toEqual(normal.state.result); // layout "restored", the notes, the sides
+        expect(rest.trimmed).toEqual(notes.trimmed);
+        expect(rest.replaced).toEqual(notes.replaced);
+        expect(rest.unavailable).toEqual(notes.unavailable);
+    });
+
     it("F17 settings writes failing stops before the sheet", async () => {
         const { plan: p } = await plan({ setup: { half: { writesFailing: true } } });
         expect((p as PreFailure).id).toBe("F17");

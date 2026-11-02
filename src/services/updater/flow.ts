@@ -90,6 +90,8 @@ export interface FlowResult {
     unavailable?: string[];
     /** One-image firmware: each half's side after the update (absent on per-hand builds). */
     sides?: SidesResult | null;
+    /** The layout is back but the touchpad mode isn't: what to do (one line). */
+    touchpadMode?: string;
 }
 
 export interface SidesResult {
@@ -1013,6 +1015,7 @@ export class UpdateFlow {
         if (flags & 0x02) throw new Stop({ id: "F17" });
         let trimmed: string[] = [];
         let notes: Omit<RestoreReport, "trimmed"> = {};
+        let touchpadMode: string | undefined;
         // "Restore my layout" with the backup lost (a reload with storage full): never reset
         // instead. The pre-update snapshot and the downloaded file still hold the layout.
         if (this.state.afterwards === "restore" && !this.backupSvil) {
@@ -1026,7 +1029,13 @@ export class UpdateFlow {
                 trimmed = report.trimmed;
                 notes = { replaced: report.replaced ?? [], unavailable: report.unavailable ?? [] };
             } catch (error) {
-                throw new Stop({ id: "F16", detail: error instanceof Error ? error.message : String(error) });
+                // The layout is back and only the touchpad mode isn't: the update finishes as a
+                // restore, with the layout's notes, and the Done screen says where to set the mode.
+                const partial = error instanceof Error && error.name === "TouchpadModeNotRestored" ? error as Error & { hint?: string; report?: RestoreReport } : null;
+                if (!partial) throw new Stop({ id: "F16", detail: error instanceof Error ? error.message : String(error) });
+                trimmed = partial.report?.trimmed ?? [];
+                notes = { replaced: partial.report?.replaced ?? [], unavailable: partial.report?.unavailable ?? [] };
+                touchpadMode = partial.hint ?? partial.message;
             }
         } else if (this.state.afterwards === "blank") {
             // Wipe to a blank board (D44): always, whatever the install already reset.
@@ -1077,7 +1086,7 @@ export class UpdateFlow {
             phase: "result",
             step: "done",
             finishedAt: this.now(),
-            result: { tags, layout: this.state.afterwards === "blank" ? "blank" : this.state.afterwards === "restore" && this.backupSvil ? "restored" : "defaults", trimmed, ...notes, sides: this.sidesResult },
+            result: { tags, layout: this.state.afterwards === "blank" ? "blank" : this.state.afterwards === "restore" && this.backupSvil ? "restored" : "defaults", trimmed, ...notes, sides: this.sidesResult, ...(touchpadMode ? { touchpadMode } : {}) },
         });
     }
 }

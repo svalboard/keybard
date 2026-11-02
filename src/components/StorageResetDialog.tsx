@@ -41,12 +41,15 @@ export const INSTALL_BACKUP_MS = 24 * 60 * 60 * 1000;
  * would be an old one. Its own fresh pre-update backup always comes first.
  * Undefined while the current layout's fingerprint is still being worked out.
  */
+/** A backup taken right before an update, within the day: the one an install's reset belongs to. */
+export const isRecentPreUpdate = (s: SnapshotMeta, now: number): boolean => s.kind === "pre-update" && now - s.savedAt < INSTALL_BACKUP_MS;
+
 export function pickResetBackup(snapshots: SnapshotMeta[], boardKey: string, currentFingerprint: string | null | undefined, o: { firmware: boolean; now: number }): SnapshotMeta | null | undefined {
     if (currentFingerprint === undefined) return undefined;
     const usable = snapshots.filter((s) => s.fingerprint !== currentFingerprint).sort((a, b) => b.savedAt - a.savedAt);
     const own = usable.find((s) => s.boardKey === boardKey) ?? null;
     if (!o.firmware) return own;
-    const recentPre = (s: SnapshotMeta) => s.kind === "pre-update" && o.now - s.savedAt < INSTALL_BACKUP_MS;
+    const recentPre = (s: SnapshotMeta) => isRecentPreUpdate(s, o.now);
     if (usable.some((s) => s.boardKey === boardKey && recentPre(s))) return own;
     const install = usable.find(recentPre) ?? null;
     return install && (!own || install.savedAt > own.savedAt) ? install : own;
@@ -202,7 +205,7 @@ export const StorageResetDialog: FC = () => {
 
 /** The reset notice, with the newest backup of this board to put back. */
 function ResetDialog({ keyboard, firmware, onAcknowledged }: { keyboard: KeyboardInfo; firmware: boolean; onAcknowledged: () => void }) {
-    const { setKeyboard, markAsSaved } = useKeyboard();
+    const { setKeyboard, markAsSaved, applyBoardState } = useKeyboard();
     const { queue, commit } = useChanges();
     const { snapshots, board } = useBackups();
     const [busy, setBusy] = useState(false);
@@ -252,7 +255,10 @@ function ResetDialog({ keyboard, firmware, onAcknowledged }: { keyboard: Keyboar
             const service = getBackupService();
             if (!service) throw new Error("Backups are unavailable in this browser.");
             const svil = await service.getSvil(newest.id);
-            await restoreLayoutToBoard(svil, { keyboard, setKeyboard, queue, commit, markSaved: markAsSaved });
+            // The touchpad mode only from the backup of the update that just reset the board: an
+            // older one's mode may since have been changed on purpose. Its layout still comes back.
+            const boardState = isRecentPreUpdate(newest, Date.now()) ? { applyBoardState } : {};
+            await restoreLayoutToBoard(svil, { keyboard, setKeyboard, queue, commit, markSaved: markAsSaved, ...boardState });
             await acknowledgeReset();
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));

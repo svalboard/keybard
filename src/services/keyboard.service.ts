@@ -1,5 +1,7 @@
 import { withTouchpadTaps } from "@/utils/touchpad-taps";
-import { hasPadTouch as hasPadTouchFlag, PAD_TOUCH_PAGE, parsePadTouch, type PadTouchReport } from "@/utils/touchpad-tuning";
+import {
+    hasPadFingers, hasPadTouch as hasPadTouchFlag, PAD_FINGERS_PAGE, PAD_TOUCH_PAGE, parsePadFingers, parsePadTouch, type PadTouchReport,
+} from "@/utils/touchpad-tuning";
 import { LabelService } from "./label.service";
 import { KleService } from "./kle.service";
 import { keyService } from "./key.service";
@@ -249,6 +251,8 @@ export class KeyboardService {
         kbinfo.feature_flags2 = svilInfo[18] ?? 0;
         // [feature_flags3:1] (GET_INFO byte 20) after it; older firmware sends zero.
         kbinfo.feature_flags3 = svilInfo[19] ?? 0;
+        // [feature_flags4:1] (GET_INFO byte 21) after that; older firmware sends zero.
+        kbinfo.feature_flags4 = svilInfo[20] ?? 0;
         // The QMK keycode numbering the board uses; older firmware sends zeros.
         const keycodeVersion = Array.from((svilInfo as Uint8Array).slice(14, 17));
         kbinfo.keycode_version_reported = keycodeVersion.some(Boolean);
@@ -345,7 +349,7 @@ export class KeyboardService {
         // Extract VIA3 custom UI menus for dynamic settings panels
         if (payloadData.menus && Array.isArray(payloadData.menus)) {
             // Firmware with the touchpad tap setting: its switches join the pointing menu.
-            kbinfo.menus = withTouchpadTaps(payloadData.menus, kbinfo.feature_flags3);
+            kbinfo.menus = withTouchpadTaps(payloadData.menus, kbinfo.feature_flags3, kbinfo.feature_flags4);
             console.log("Loaded custom UI menus:", payloadData.menus.map((m: { label?: string }) => m.label).filter(Boolean));
         }
 
@@ -634,8 +638,19 @@ export class KeyboardService {
         if (!this.hasPadTouch(kbinfo)) return null;
         const perReader = ((kbinfo.feature_flags2 ?? 0) & SVIL_FLAG2_POINTING_MOTION_READERS) !== 0;
         try {
-            const reply = await this.usb.sendSvil(SvilUSB.CMD_SVIL_POINTING_MOTION, [perReader ? KEYBARD_MOTION_READER : 0, PAD_TOUCH_PAGE], { uint8: true }) as Uint8Array;
-            return parsePadTouch(reply, SvilUSB.CMD_SVIL_POINTING_MOTION);
+            const reader = perReader ? KEYBARD_MOTION_READER : 0;
+            const reply = await this.usb.sendSvil(SvilUSB.CMD_SVIL_POINTING_MOTION, [reader, PAD_TOUCH_PAGE], { uint8: true }) as Uint8Array;
+            const report = parsePadTouch(reply, SvilUSB.CMD_SVIL_POINTING_MOTION);
+            // Every finger on each pad (page 2), on firmware that has it: one more read in the same poll.
+            if (report && hasPadFingers(kbinfo.feature_flags3)) {
+                try {
+                    const fingers = await this.usb.sendSvil(SvilUSB.CMD_SVIL_POINTING_MOTION, [reader, PAD_FINGERS_PAGE], { uint8: true }) as Uint8Array;
+                    report.fingers = parsePadFingers(fingers, SvilUSB.CMD_SVIL_POINTING_MOTION);
+                } catch {
+                    report.fingers = null;
+                }
+            }
+            return report;
         } catch {
             return null;
         }

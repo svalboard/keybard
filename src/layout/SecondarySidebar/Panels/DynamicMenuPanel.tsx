@@ -6,7 +6,9 @@ import { useKeyboard } from "@/contexts/KeyboardContext";
 import { useMenuValues } from "@/hooks/useMenuValues";
 import { openTouchpadTuning } from "@/components/touchpad-tuning/tuning-open";
 import type { CustomUIMenuItem } from "@/types/keyboard.types";
-import { boardHasTouchpad, PAD_KEYS } from "@/utils/touchpad-taps";
+import { boardHasTouchpad, PAD_KEYS, PADS_OS_KEY, padsInTouchpadMode } from "@/utils/touchpad-taps";
+import { PAD_MODE_KEY } from "@/utils/touchpad-tuning";
+import { useTouchpadModeChange, useWriteTouchpadMode } from "@/components/touchpad-tuning/TouchpadMode";
 import { PAD_TUNING_KEYS, TUNE_TOUCHPAD_ACTION } from "@/utils/touchpad-tuning";
 
 // The tuning values are shown in Settings, never here; on a board without a
@@ -40,8 +42,23 @@ const DynamicMenuPanel: React.FC<DynamicMenuPanelProps> = ({ menuIndex, horizont
     const displayItems = useMemo(() => selectPointingMenu(
         (menu?.content ?? []) as CustomUIMenuItem[], section, hasTouchpad ? TUNING_HIDDEN : PAD_HIDDEN,
     ), [menu, section, hasTouchpad]);
-    const { values, setValue: handleValueChange, loading, error } = useMenuValues(menu);
-    const shownValues = useMemo(() => withEffectiveTiming(values), [values]);
+    const { values, setValue, loading, error, writeError } = useMenuValues(menu);
+    // Touchpad mode (VIA 59): to built-in gestures only after the check; then
+    // POINTING_HARDWARE again, whose touchpad-mode bit follows it at once.
+    const writeMode = useWriteTouchpadMode(setValue);
+    const modeChange = useTouchpadModeChange(writeMode);
+    const handleValueChange = useCallback(async (key: string, value: number) => {
+        if (key === PAD_MODE_KEY) { modeChange.change(value, values.get(PAD_MODE_KEY) ?? 0); return; }
+        await setValue(key, value);
+    }, [modeChange, setValue, values]);
+    // Touchpad mode at connect: the chip's tap switches are hidden (touchpad-taps.ts PADS_OS_KEY).
+    const padsOs = padsInTouchpadMode(keyboard);
+    const shownValues = useMemo(() => {
+        // Always set, so the switches show on a board that reports nothing.
+        const out = new Map(withEffectiveTiming(values));
+        out.set(PADS_OS_KEY, padsOs ? 1 : 0);
+        return out;
+    }, [values, padsOs]);
 
     const handleButtonClick = useCallback(async (key: string) => {
         if (key === TUNE_TOUCHPAD_ACTION) { openTouchpadTuning(); return; }
@@ -101,6 +118,8 @@ const DynamicMenuPanel: React.FC<DynamicMenuPanelProps> = ({ menuIndex, horizont
                     horizontal
                     compact
                 />
+                {writeError && <p className="px-2 text-xs text-kb-touch-cancel" role="alert" data-write-error>{writeError}</p>}
+                {modeChange.confirm}
             </section>
         );
     }
@@ -114,6 +133,8 @@ const DynamicMenuPanel: React.FC<DynamicMenuPanelProps> = ({ menuIndex, horizont
                     onValueChange={handleValueChange}
                     onButtonClick={handleButtonClick}
                 />
+                {writeError && <p className="px-2 text-sm text-kb-touch-cancel" role="alert" data-write-error>{writeError}</p>}
+                {modeChange.confirm}
             </div>
         </section>
     );

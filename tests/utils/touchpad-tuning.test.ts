@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import { SCRIPT_MS, scriptSample, TOUCH_SCRIPT } from "@/dev/fake-board/touch-script";
 import { withTouchpadTaps } from "@/utils/touchpad-taps";
 import {
-    ChipModel, contactRadius, EMPTY_BLOCK, formatMm, hasPadTouch, hasPadTuning, nearest, outcome, packPadTouch, PAD_DEAD_ZONE_MM100, PAD_SCROLL_MM100,
-    PAD_TAP_MS, parsePadTouch, steps, TOUCH_EV, TouchTracker, TUNE_TOUCHPAD_ACTION, type ChipSettings, type PadTouchBlock, type PadTouchReport,
+    ChipModel, contactRadius, EMPTY_BLOCK, EMPTY_FINGERS, formatMm, formatPalm, hasPadFingers, hasPadPalm, hasPadTouch, hasPadTuning, isPalm,
+    nearest, outcome, packPadFingers, packPadTouch, PAD_DEAD_ZONE_MM100, PAD_PALM_KEY, PAD_SCROLL_MM100, PAD_TAP_MS, PAD_TUNING_KEYS, parsePadFingers,
+    parsePadTouch, steps, TOUCH_EV, TouchTracker, TUNE_TOUCHPAD_ACTION, type ChipSettings, type PadFingersBlock, type PadTouchBlock, type PadTouchReport,
 } from "@/utils/touchpad-tuning";
 
 const SETTINGS: ChipSettings = { deadZone: 80, tapMs: 150, holdMs: 300, tapOn: true, twoFingerOn: true, holdOn: true };
@@ -134,8 +135,8 @@ describe("what a touch did, and why", () => {
         expect(run([{ down: true, fingers: 2, events: TOUCH_EV.down }, { events: TOUCH_EV.up | TOUCH_EV.twoTap, ms: 100 }])[0]!.kind).toBe("right");
     });
 
-    it("on a pad the computer has as a touchpad, still says what the chip decided", () => {
-        expect(outcome(TOUCH_EV.tap, 1, { ...EMPTY_BLOCK, valid: true, os: true, ms: 80 }, report()).kind).toBe("tap");
+    it("on a pad in touchpad mode, says only the fingers: the computer made the click", () => {
+        expect(outcome(TOUCH_EV.tap, 1, { ...EMPTY_BLOCK, valid: true, os: true, ms: 80 }, report())).toMatchObject({ kind: "touch", text: "One finger, 80 ms" });
     });
 
     it("keeps the touch's path, from the down point", () => {
@@ -206,6 +207,10 @@ describe("the simulated board's scripted touches", () => {
         "press and hold": TOUCH_EV.hold,
         "hold that drifts 0.65 mm": TOUCH_EV.hold,
         "two-finger tap": TOUCH_EV.twoTap,
+        "two-finger scroll": TOUCH_EV.scroll,
+        "two fingers that move 0.6 mm, too little to scroll": 0,
+        "three-finger touch": 0,
+        "resting palm": TOUCH_EV.hold,
         "pointer move": TOUCH_EV.drift,
     };
 
@@ -228,7 +233,7 @@ describe("the simulated board's scripted touches", () => {
             m.sample(scriptSample(t));
             events |= m.read(t).events;
         }
-        const kinds = TOUCH_EV.tap | TOUCH_EV.hold | TOUCH_EV.twoTap | TOUCH_EV.drift;
+        const kinds = TOUCH_EV.tap | TOUCH_EV.hold | TOUCH_EV.twoTap | TOUCH_EV.drift | TOUCH_EV.scroll;
         if (name === "hold that drifts 0.65 mm") expect(events & TOUCH_EV.drift).toBe(0);
         expect(events & kinds & (want || kinds)).toBe(want);
     });
@@ -247,6 +252,139 @@ describe("the simulated board's scripted touches", () => {
     });
 });
 
+describe("the fingers page", () => {
+    const block = (b: Partial<PadFingersBlock>): PadFingersBlock => ({ ...EMPTY_FINGERS, valid: true, ...b });
+
+    it("reads GET_INFO byte 20 bit 7 and byte 21 bit 0", () => {
+        expect(hasPadFingers(0x80)).toBe(true);
+        expect(hasPadFingers(0x7f)).toBe(false);
+        expect(hasPadPalm(0x01)).toBe(true);
+        expect(hasPadPalm(undefined)).toBe(false);
+    });
+
+    it("round-trips the firmware's layout: every slot, the two-finger numbers, the palm threshold", () => {
+        const left = block({ os: true, two: true, hadTwo: true, scrolled: true, fingers: [{ slot: 0, x: 2150, y: 2000, area: 3 }, { slot: 3, x: 4298, y: 3998, area: 12 }],
+            startX: 2100, startY: 2010, travel: 160, twoMs: 80 });
+        const right = block({ twoTap: true, chipPalm: true, tooMany: true });
+        const bytes = packPadFingers({ palm: 10, left, right });
+        expect(bytes).toHaveLength(56);
+        expect(bytes[0]).toBe(1);
+        expect(bytes[1]).toBe(10);
+        // The firmware's own test vector: slot 0 at 1075, 1000 (0.02 mm), area 3.
+        expect(bytes[2]).toBe(0x01 | 0x02 | 0x10 | 0x20 | 0x80); // valid, OS, two, scrolled, had two
+        expect(bytes[3]).toBe(0x09); // slots 0 and 3
+        expect(bytes[4] | (bytes[5] << 8) | (bytes[6] << 16)).toBe(1075 | (1000 << 12));
+        const r = parsePadFingers(Uint8Array.from([0x2d, ...bytes]))!;
+        expect(r.palm).toBe(10);
+        expect(r.left.fingers).toEqual([{ slot: 0, x: 2150, y: 2000, area: 3 }, { slot: 3, x: 4298, y: 3998, area: 12 }]);
+        expect(r.left).toMatchObject({ os: true, two: true, hadTwo: true, scrolled: true, startX: 2100, startY: 2010, travel: 160, twoMs: 80 });
+        expect(r.right).toMatchObject({ valid: true, twoTap: true, chipPalm: true, tooMany: true, fingers: [] });
+    });
+
+    it("refuses anything else", () => {
+        expect(parsePadFingers(null)).toBeNull();
+        expect(parsePadFingers(Uint8Array.from([0x2d, 2, ...new Array(55).fill(0)]))).toBeNull(); // the touch page's format
+        expect(parsePadFingers(Uint8Array.from([0x2d, 1, 0]))).toBeNull(); // short
+        const empty = parsePadFingers(Uint8Array.from([0x2d, 1, ...new Array(55).fill(0)]))!;
+        expect(empty.left.valid).toBe(false);
+    });
+
+    it("a palm is a contact larger than the threshold, never with it off", () => {
+        expect(isPalm(0, 40)).toBe(false);
+        expect(isPalm(10, 10)).toBe(false);
+        expect(isPalm(10, 11)).toBe(true);
+        expect(formatPalm(0)).toBe("Off");
+        expect(formatPalm(12)).toBe("over 12 channels");
+        expect(PAD_TUNING_KEYS).toContain(PAD_PALM_KEY);
+    });
+});
+
+describe("multi-finger touches, and what the chip made of them", () => {
+    const r = report();
+    const play = (name: string, cfg: Partial<ChipSettings> = {}, palm = 0, os = false) => {
+        const m = new ChipModel(() => ({ ...SETTINGS, scrollStart: 105, ...cfg }));
+        const t = new TouchTracker();
+        let at = 0;
+        for (const s of TOUCH_SCRIPT) { if (s.name === name) break; at += s.ms + s.gap; }
+        const s = TOUCH_SCRIPT.find((x) => x.name === name)!;
+        const seen: PadFingersBlock[] = [];
+        let done = null;
+        for (let tt = at; tt <= at + s.ms + 60; tt += 30) {
+            for (let u = tt - 20; u <= tt; u += 10) m.sample(scriptSample(u));
+            const b = { ...m.read(tt), os };
+            const f = { ...m.readFingers(tt), os };
+            seen.push(f);
+            done = t.take(b, { ...r, deadZone: cfg.deadZone ?? 80 }, f, palm) ?? done;
+        }
+        return { done: done!, seen, tracker: t };
+    };
+
+    it("two fingers that scroll: the chip's rule, from the two-finger start, and when it started", () => {
+        const { done, seen } = play("two-finger scroll");
+        const live = seen.filter((f) => f.two);
+        expect(live.length).toBeGreaterThan(5);
+        expect(live.every((f) => f.fingers.length === 2)).toBe(true);
+        const first = seen.findIndex((f) => f.scrolled);
+        expect(seen[first].travel).toBeGreaterThan(105);
+        expect(seen[first - 1].travel).toBeLessThanOrEqual(105 + 40);
+        expect(done.kind).toBe("scroll");
+        expect(done.text).toMatch(/^Two-finger scroll: started after \d+(\.\d+)? mm \(scroll start 1\.05 mm\)$/);
+    });
+
+    it("a higher scroll start: the same touch scrolls later", () => {
+        const at = (start: number) => { const { seen } = play("two-finger scroll", { scrollStart: start }); return seen.findIndex((f) => f.scrolled); };
+        expect(at(400)).toBeGreaterThan(at(105));
+    });
+
+    it("too little travel: no scroll, and says how far of the scroll start", () => {
+        const { done, seen } = play("two fingers that move 0.6 mm, too little to scroll");
+        expect(seen.some((f) => f.scrolled)).toBe(false);
+        expect(done.kind).toBe("short");
+        expect(done.text).toMatch(/^Two fingers, no click: moved 0\.\d+ mm of the 1\.05 mm scroll start; lifted at \d+ ms, past the 150 ms tap time$/);
+    });
+
+    it("a two-finger tap fires at the lift, with a check", () => {
+        const { done } = play("two-finger tap");
+        expect(done.kind).toBe("right");
+        expect(done.text).toMatch(/^Two-finger tap ✓ right click, \d+ ms$/);
+    });
+
+    it("three fingers: every finger, no gesture", () => {
+        const { done, seen } = play("three-finger touch");
+        expect(Math.max(...seen.map((f) => f.fingers.length))).toBe(3);
+        expect(new Set(seen.flatMap((f) => f.fingers.map((p) => p.slot)))).toEqual(new Set([0, 1, 2]));
+        expect(seen.some((f) => f.two && f.fingers.length === 3)).toBe(false);
+        expect(done.kind).toBe("multi");
+        expect(done.text).toMatch(/^Three fingers: no tap or scroll on the chip/);
+    });
+
+    it("a resting palm: plain with palm rejection off, a palm above the threshold", () => {
+        expect(play("resting palm").done.kind).not.toBe("palm");
+        const { done } = play("resting palm", {}, 10);
+        expect(done.kind).toBe("palm");
+        expect(done.text).toMatch(/^Palm: 14 channels, over 10: the pad ignored it/);
+        expect(play("resting palm", {}, 10, true).done.text).toMatch(/the computer ignores it/);
+        expect(play("resting palm", {}, 20).done.kind).not.toBe("palm");
+    });
+
+    it("in touchpad mode, gives each touch's fingers and palms only", () => {
+        expect(play("two-finger tap", {}, 0, true).done).toMatchObject({ kind: "touch", os: true });
+        expect(play("two-finger tap", {}, 0, true).done.text).toMatch(/^Two fingers, \d+ ms$/);
+        expect(play("quick tap", {}, 0, true).done.text).toMatch(/^One finger, \d+ ms$/);
+        expect(play("three-finger touch", {}, 0, true).done.text).toMatch(/^Three fingers, \d+ ms$/);
+        expect(play("resting palm", {}, 10, true).done.text).toMatch(/^Palm: 14 channels, over 10: the computer ignores it/);
+        for (const name of ["two-finger scroll", "pointer move", "press and hold"]) expect(play(name, {}, 0, true).done.text).not.toMatch(/Chip|tap|scroll|hold/i);
+    });
+
+    it("a stale two-finger touch from before doesn't color a single tap", () => {
+        const t = new TouchTracker();
+        const stale = { ...EMPTY_FINGERS, valid: true, hadTwo: true, travel: 300, startX: 10, startY: 10 };
+        t.take({ ...EMPTY_BLOCK, valid: true, down: true, fingers: 1, events: TOUCH_EV.down }, r, { ...stale, fingers: [{ slot: 0, x: 1, y: 1, area: 3 }] });
+        const o = t.take({ ...EMPTY_BLOCK, valid: true, events: TOUCH_EV.up | TOUCH_EV.tap, ms: 80 }, r, stale);
+        expect(o!.kind).toBe("tap");
+    });
+});
+
 describe("the Touchpad section with tuning", () => {
     const menus = [{ label: "Pointing Device", content: [{ label: "Left Pointer", content: [{ label: "DPI", type: "dropdown" as const, content: ["id_left_dpi", 0, 0] }] }] }];
 
@@ -256,6 +394,11 @@ describe("the Touchpad section with tuning", () => {
         expect(keys(0x10)).not.toContain(TUNE_TOUCHPAD_ACTION);
         const withTuning = keys(0x30);
         for (const k of ["id_pad_dead_zone", "id_pad_tap_ms", "id_pad_scroll_start", TUNE_TOUCHPAD_ACTION]) expect(withTuning).toContain(k);
+    });
+
+    it("adds palm rejection (VIA 58) only on firmware with GET_INFO byte 21 bit 0", () => {
+        expect(JSON.stringify(withTouchpadTaps(menus, 0x30))).not.toContain(PAD_PALM_KEY);
+        expect(JSON.stringify(withTouchpadTaps(menus, 0x30, 0x01))).toContain(PAD_PALM_KEY);
     });
 
     it("reads the tuning values as 16-bit (their ranges pass 255) on the menu's channel", () => {

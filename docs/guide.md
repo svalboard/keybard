@@ -50,6 +50,8 @@ The **Pointing Devices** panel tunes each side separately:
 
 Add **Sniper** keys to slow the cursor and **Boost** keys to speed it up. Either kind can be held or toggled.
 
+**Touchpads:** on Windows and Linux the pads are a touchpad (Touchpad mode), set up with the system's own touchpad settings. On a Mac, and in a BIOS, the pads make their own taps and scrolling (built-in gestures), tuned in **Settings → Touchpad tuning**. **Touchpad mode** at the top of that dialog can keep the built-in gestures on Windows and Linux too. It's saved on the board, not in layout files: exporting, importing or sharing a layout never changes it. A firmware update keeps it: Keybard records it with the backup it takes before the update, and **Restore my layout** puts it back.
+
 ## Backups and layout files
 
 - **Automatic backups:** while your board is connected, Keybard keeps snapshots of it. Find them in **Settings → Backups**. From there you can restore one (you review it before anything is written) or download it. You can also choose a folder where Keybard keeps a plain copy you can see.
@@ -70,5 +72,6 @@ Give each board a name in **Settings**, then restart it so your computer shows t
 
 - **Matrix Tester** lights up each key as you press it.
 - After a configuration reset, restart the board before making new edits.
+- Touchpad gestures stopped working on Windows or Linux? Set **Settings → Touchpad tuning → Touchpad mode** back to **Automatic**. A settings reset returns it to Automatic too.
 - Release a tap-dance key before changing what it does.
 - Alternate-repeat modifier matching has known problems; check custom mappings before relying on them.

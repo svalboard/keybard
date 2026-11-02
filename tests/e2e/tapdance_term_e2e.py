@@ -72,7 +72,11 @@ def app_url():
             raise RuntimeError(f"vite preview did not start at {url}")
         yield url
     finally:
-        server.terminate()
+        # The whole tree on Windows (npx -> cmd -> node -> esbuild), as fake_board_e2e.stop_server does.
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(server.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            server.terminate()
         try:
             server.wait(timeout=10)
         except subprocess.TimeoutExpired:

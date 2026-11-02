@@ -16,7 +16,27 @@ export const SVIL_FLAG3_PAD_TOUCH = 0x40;
 export const PAD_DEAD_ZONE_KEY = "id_pad_dead_zone";
 export const PAD_TAP_MS_KEY = "id_pad_tap_ms";
 export const PAD_SCROLL_KEY = "id_pad_scroll_start";
-export const PAD_TUNING_KEYS = [PAD_DEAD_ZONE_KEY, PAD_TAP_MS_KEY, PAD_SCROLL_KEY] as const;
+/**
+ * VIA value 59 (GET_INFO byte 21 bit 1): the touchpad mode. Automatic (0, the
+ * default and what ships): a touchpad whenever Windows or Linux asks for one.
+ * Built-in gestures (1): the chip's own taps and scrolling even then, as on a
+ * Mac or in a BIOS.
+ */
+export const PAD_MODE_KEY = "id_pad_touchpad_mode";
+export const PAD_MODE_AUTO = 0;
+export const PAD_MODE_BUILTIN = 1;
+export const PAD_MODE_LABELS = ["Automatic", "Built-in gestures"] as const;
+export const SVIL_FLAG4_PAD_MODE = 0x02;
+export const hasPadMode = (flags4: number | undefined | null): boolean => ((flags4 ?? 0) & SVIL_FLAG4_PAD_MODE) !== 0;
+/**
+ * Board settings that aren't layout: never exported to a .svil and never
+ * imported from one. The touchpad mode is saved on the board, a per-board
+ * choice, and switching it on import would skip its confirmation.
+ */
+export const NOT_LAYOUT_VALUES: readonly string[] = [PAD_MODE_KEY];
+/** VIA value 58 (GET_INFO byte 21 bit 0): the palm rejection, an area in the chip's channels; 0 off. */
+export const PAD_PALM_KEY = "id_pad_palm";
+export const PAD_TUNING_KEYS = [PAD_DEAD_ZONE_KEY, PAD_TAP_MS_KEY, PAD_SCROLL_KEY, PAD_PALM_KEY] as const;
 /** The menu entry that opens the tuning view (an app action, not a value). */
 export const TUNE_TOUCHPAD_ACTION = "app:touchpad-tuning";
 export const TUNE_TOUCHPAD_LABEL = "Tune touchpad…";
@@ -101,6 +121,8 @@ export interface PadTouchReport {
     channelsY: number;
     left: PadTouchBlock;
     right: PadTouchBlock;
+    /** Every finger on each pad (the fingers page, page 2), when the firmware has it and the read worked. */
+    fingers?: PadFingersReport | null;
 }
 
 export const PAD_TOUCH_PAGE = 1;
@@ -176,14 +198,147 @@ export function contactRadius(area: number, r: Pick<PadTouchReport, "width" | "h
     return Math.round(Math.sqrt((area * cell) / Math.PI));
 }
 
+// ---------------------------------------------------------------- the fingers page
+
+/** GET_INFO byte 20 bit 7: the fingers page of 0x2D (page 2), every finger on each pad. */
+export const SVIL_FLAG3_PAD_FINGERS = 0x80;
+/** GET_INFO byte 21 (feature_flags4) bit 0: VIA value 58, the palm rejection. */
+export const SVIL_FLAG4_PAD_PALM = 0x01;
+export const hasPadFingers = (flags3: number | undefined | null): boolean => ((flags3 ?? 0) & SVIL_FLAG3_PAD_FINGERS) !== 0;
+export const hasPadPalm = (flags4: number | undefined | null): boolean => ((flags4 ?? 0) & SVIL_FLAG4_PAD_PALM) !== 0;
+
+/**
+ * The palm thresholds offered, in the chip's channels (about 5.4 x 5.7 mm each
+ * on the TPS43); 0 is off, the default. The board stores any 0-56.
+ */
+export const PAD_PALM_CHANNELS = [0, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24, 30, 40] as const;
+/** A threshold in plain words. */
+export function formatPalm(channels: number): string {
+    return channels ? `over ${channels} channels` : "Off";
+}
+
+export const PAD_FINGERS_PAGE = 2;
+export const PAD_FINGERS_FORMAT = 1;
+const FINGERS_PAGE_BYTES = 56;
+const FINGERS_BLOCK_BYTES = 27;
+
+export interface PadFinger {
+    /** The chip's slot: a finger keeps it while it is down. */
+    slot: number;
+    /** 0.01 mm, in the pad's own orientation (0.02 mm steps). */
+    x: number;
+    y: number;
+    /** Channels the finger covers. */
+    area: number;
+}
+
+export interface PadFingersBlock {
+    valid: boolean;
+    /** The computer has this pad as a touchpad: its taps and scrolling are the computer's. */
+    os: boolean;
+    /** The chip's own palm detect, and more fingers than it reports. */
+    chipPalm: boolean;
+    tooMany: boolean;
+    /** A two-finger touch is live: two fingers, and only two, since the second landed. */
+    two: boolean;
+    /** The chip started a scroll during that two-finger touch. */
+    scrolled: boolean;
+    /** The chip reported a two-finger tap since the last read. */
+    twoTap: boolean;
+    /** The two-finger numbers below hold a touch (the live one, or the last). */
+    hadTwo: boolean;
+    fingers: PadFinger[];
+    /** Where the two fingers' centroid was when the second landed, 0.01 mm. */
+    startX: number;
+    startY: number;
+    /** The two fingers' average travel since then, 0.01 mm: what the chip compares with the scroll start. */
+    travel: number;
+    /** ms since the second finger landed (or how long the two-finger touch lasted). */
+    twoMs: number;
+}
+
+export interface PadFingersReport {
+    /** The palm rejection threshold in force, channels; 0 off. */
+    palm: number;
+    left: PadFingersBlock;
+    right: PadFingersBlock;
+}
+
+export const EMPTY_FINGERS: PadFingersBlock = {
+    valid: false, os: false, chipPalm: false, tooMany: false, two: false, scrolled: false, twoTap: false, hadTwo: false,
+    fingers: [], startX: 0, startY: 0, travel: 0, twoMs: 0,
+};
+
+const getPos = (b: Uint8Array, o: number) => {
+    const v = b[o] | (b[o + 1] << 8) | (b[o + 2] << 16);
+    return { x: (v & 0xfff) * 2, y: ((v >> 12) & 0xfff) * 2 };
+};
+const setPos = (b: Uint8Array, o: number, x: number, y: number) => {
+    const c = (n: number) => Math.max(0, Math.min(0xfff, Math.round(n / 2)));
+    const v = c(x) | (c(y) << 12);
+    b[o] = v & 0xff; b[o + 1] = (v >> 8) & 0xff; b[o + 2] = (v >> 16) & 0xff;
+};
+
+function fingersBlock(b: Uint8Array, o: number): PadFingersBlock {
+    const f = b[o];
+    if (!(f & 0x01)) return EMPTY_FINGERS;
+    const mask = b[o + 1];
+    const fingers: PadFinger[] = [];
+    for (let slot = 0; slot < 5; slot++) {
+        if (!(mask & (1 << slot))) continue;
+        fingers.push({ slot, ...getPos(b, o + 2 + 4 * slot), area: b[o + 5 + 4 * slot] });
+    }
+    const start = getPos(b, o + 22);
+    return {
+        valid: true, os: (f & 0x02) !== 0, chipPalm: (f & 0x04) !== 0, tooMany: (f & 0x08) !== 0, two: (f & 0x10) !== 0,
+        scrolled: (f & 0x20) !== 0, twoTap: (f & 0x40) !== 0, hadTwo: (f & 0x80) !== 0, fingers,
+        startX: start.x, startY: start.y, travel: b[o + 25] * 5, twoMs: b[o + 26] * 4,
+    };
+}
+
+/** The reply to DF 2D <reader> 02, from the command byte on. Null for anything but format 1 of this page. */
+export function parsePadFingers(reply: Uint8Array | null | undefined, cmd = 0x2d): PadFingersReport | null {
+    if (!reply || reply.length < 1 + FINGERS_PAGE_BYTES || reply[0] !== cmd || reply[1] !== PAD_FINGERS_FORMAT) return null;
+    const b = reply.subarray(1, 1 + FINGERS_PAGE_BYTES);
+    return { palm: b[1], left: fingersBlock(b, 2), right: fingersBlock(b, 2 + FINGERS_BLOCK_BYTES) };
+}
+
+/** The 56 bytes of a fingers page (for the simulated board and tests). */
+export function packPadFingers(r: PadFingersReport): Uint8Array {
+    const out = new Uint8Array(FINGERS_PAGE_BYTES);
+    out[0] = PAD_FINGERS_FORMAT;
+    out[1] = r.palm;
+    for (const [o, f] of [[2, r.left], [2 + FINGERS_BLOCK_BYTES, r.right]] as const) {
+        if (!f.valid) continue;
+        out[o] = 0x01 | (f.os ? 0x02 : 0) | (f.chipPalm ? 0x04 : 0) | (f.tooMany ? 0x08 : 0) | (f.two ? 0x10 : 0)
+            | (f.scrolled ? 0x20 : 0) | (f.twoTap ? 0x40 : 0) | (f.hadTwo ? 0x80 : 0);
+        for (const p of f.fingers) {
+            out[o + 1] |= 1 << p.slot;
+            setPos(out, o + 2 + 4 * p.slot, p.x, p.y);
+            out[o + 5 + 4 * p.slot] = p.area;
+        }
+        if (f.hadTwo) {
+            setPos(out, o + 22, f.startX, f.startY);
+            out[o + 25] = Math.min(255, Math.round(f.travel / 5));
+            out[o + 26] = Math.min(255, Math.floor(f.twoMs / 4));
+        }
+    }
+    return out;
+}
+
+/** A finger of this area is a palm under this threshold (0: off). */
+export const isPalm = (palm: number, area: number): boolean => palm > 0 && area > palm;
+
 // ---------------------------------------------------------------- one touch's outcome
 
-export type TouchOutcomeKind = "tap" | "right" | "hold" | "canceled" | "late" | "short" | "moved" | "scroll";
+export type TouchOutcomeKind = "tap" | "right" | "hold" | "canceled" | "late" | "short" | "moved" | "scroll" | "palm" | "multi" | "touch";
 
 export interface TouchOutcome {
     kind: TouchOutcomeKind;
     /** Plain words for the list under the pad. */
     text: string;
+    /** The computer had the pad as a touchpad: the text gives only the fingers (and a palm). */
+    os: boolean;
     /** How long the touch lasted and how far it went from its down point. */
     ms: number;
     farthest: number;
@@ -194,68 +349,145 @@ export interface TouchOutcome {
     y: number;
 }
 
+/** What the fingers page added to a touch, from touch-down to the lift. */
+export interface MultiTouch {
+    /** The most fingers down at once. */
+    maxFingers: number;
+    /** A two-finger touch happened, and how far its fingers went on average (0.01 mm). */
+    hadTwo: boolean;
+    maxTravel: number;
+    /** The average travel when the chip's scroll first showed; 0: it never scrolled. */
+    scrolledAt: number;
+    twoTap: boolean;
+    /** The largest finger, and whether it went over the palm threshold. */
+    maxArea: number;
+    palm: number;
+    scrollStart: number;
+    deadZone: number;
+}
+
+const COUNT = ["no", "one", "two", "three", "four", "five"];
+const fingersWord = (n: number) => `${COUNT[n] ?? n} finger${n === 1 ? "" : "s"}`;
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+export function outcome(events: number, maxFingers: number, b: PadTouchBlock,
+    s: Pick<PadTouchReport, "tapMs" | "holdMs" | "holdOn" | "tapOn" | "twoFingerOn">, multi?: MultiTouch): TouchOutcome {
+    const base = { os: b.os, ms: b.ms, farthest: b.farthest, downX: b.downX, downY: b.downY, x: b.x, y: b.y };
+    const say = (kind: TouchOutcomeKind, text: string): TouchOutcome => ({ kind, text, ...base });
+    const sec = `${b.ms} ms`;
+    const moved = formatMm(b.farthest);
+    const holdAt = s.tapMs + s.holdMs;
+    // Palm rejection is the firmware's, in both modes: said plainly, never as the chip's.
+    if (multi && isPalm(multi.palm, multi.maxArea)) {
+        const what = b.os ? "the computer ignores it" : "the pad ignored it";
+        return { kind: "palm", text: `Palm: ${multi.maxArea} channels, over ${multi.palm}: ${what} (${sec})`, ...base };
+    }
+    const fingers = Math.max(maxFingers, multi?.maxFingers ?? 0, 1);
+    // Touchpad mode: the computer makes the taps and scrolls, so a touch is its fingers and how long it lasted.
+    if (b.os) return { kind: "touch", text: `${capital(fingersWord(fingers))}, ${sec}`, ...base };
+    if (multi && fingers >= 3) return say("multi", `${capital(fingersWord(fingers))}: no tap or scroll on the chip (${sec})`);
+    if (multi?.twoTap || (events & TOUCH_EV.twoTap)) {
+        return say("right", multi ? `Two-finger tap ✓ right click, ${sec}` : `Right click: two fingers, ${sec}`);
+    }
+    if (multi?.scrolledAt) return say("scroll", `Two-finger scroll: started after ${formatMm(multi.scrolledAt)} (scroll start ${formatMm(multi.scrollStart)})`);
+    if (multi?.hadTwo) {
+        const why = !s.twoFingerOn ? "two-finger tap is off" : b.ms >= s.tapMs ? `lifted at ${sec}, past the ${s.tapMs} ms tap time` : `a finger left the ${formatMm(multi.deadZone)} dead zone`;
+        return say("short", `Two fingers, no click: moved ${formatMm(multi.maxTravel)} of the ${formatMm(multi.scrollStart)} scroll start; ${why}`);
+    }
+    if (events & TOUCH_EV.hold) return say("hold", `Press and hold at ${holdAt} ms, released at the lift (${sec})`);
+    if (events & TOUCH_EV.tap) return say("tap", `Tap: ${sec}, moved ${moved}`);
+    if (events & TOUCH_EV.scroll) return say("scroll", `Scroll: two fingers, ${sec}`);
+    if (events & TOUCH_EV.drift) return say("canceled", `Canceled: moved ${moved}, out of the dead zone (${sec})`);
+    if (fingers >= 2) return say("short", s.twoFingerOn ? `No click: two fingers, ${sec}` : `No click: two-finger tap is off (${sec})`);
+    if (b.ms < s.tapMs) return say("short", s.tapOn ? `No click: ${sec}, moved ${moved}` : `No click: tap to click is off (${sec})`);
+    if (!s.holdOn) return say("late", `No click: ${sec} is past the ${s.tapMs} ms tap time, and press and hold is off`);
+    if (b.ms >= holdAt) return say("moved", `No click: moved ${moved} (a pointer move, ${sec})`);
+    return say("late", `No click: lifted at ${sec}, after the ${s.tapMs} ms tap time and before the ${holdAt} ms hold`);
+}
+
+type TrackSettings = Pick<PadTouchReport, "tapMs" | "holdMs" | "holdOn" | "tapOn" | "twoFingerOn" | "scrollStart" | "deadZone">;
+
 /**
  * Follows one pad across reads and tells, for each touch that ends, what the
  * chip made of it and why. The chip's own events decide clicks; the dead zone
- * cancel is the firmware's reading of the chip's rule (bit 6).
+ * cancel is the firmware's reading of the chip's rule (bit 6). With the
+ * fingers page it also follows every finger: the two-finger touch, the
+ * chip's scroll and two-finger tap, and palms.
  */
 export class TouchTracker {
     private open = false;
     private events = 0;
     private maxFingers = 0;
     private last: PadTouchBlock = EMPTY_BLOCK;
+    private multi: MultiTouch | null = null;
     /** The touch now, while a finger is down. */
     current: PadTouchBlock | null = null;
     /** Events of the touch now (or the last one), for the marks on the pad. */
     touchEvents = 0;
     /** Where the touch now (or the last one) has been, 0.01 mm, as read. */
     trail: { x: number; y: number }[] = [];
+    /** Every finger now (or at the last read of the last touch), and the two-finger state. */
+    fingers: PadFingersBlock = EMPTY_FINGERS;
+    /** Where the two fingers' centroid has been since the second landed, 0.01 mm. */
+    twoTrail: { x: number; y: number }[] = [];
+    /** The touch now (or the last one): the most fingers, the two-finger numbers, the largest finger. */
+    get touch(): MultiTouch | null {
+        return this.multi;
+    }
 
-    take(b: PadTouchBlock, settings: Pick<PadTouchReport, "tapMs" | "holdMs" | "holdOn" | "tapOn" | "twoFingerOn">): TouchOutcome | null {
-        if (!b.valid) { this.current = null; this.open = false; return null; }
-        if (b.events & TOUCH_EV.down) {
-            if (this.open) this.events = 0; // a lift and a new touch between reads
-            this.open = true;
-            this.events = 0;
-            this.maxFingers = 0;
-            this.trail = [{ x: b.downX, y: b.downY }];
-        }
-        if (!this.open && b.down) { this.open = true; this.events = 0; this.maxFingers = 0; this.trail = [{ x: b.downX, y: b.downY }]; }
+    private begin(b: PadTouchBlock, s: TrackSettings, palm: number) {
+        this.open = true;
+        this.events = 0;
+        this.maxFingers = 0;
+        this.trail = [{ x: b.downX, y: b.downY }];
+        this.twoTrail = [];
+        this.multi = { maxFingers: 0, hadTwo: false, maxTravel: 0, scrolledAt: 0, twoTap: false, maxArea: 0, palm, scrollStart: s.scrollStart, deadZone: s.deadZone };
+    }
+
+    take(b: PadTouchBlock, settings: TrackSettings | Pick<PadTouchReport, "tapMs" | "holdMs" | "holdOn" | "tapOn" | "twoFingerOn">,
+        f?: PadFingersBlock | null, palm = 0): TouchOutcome | null {
+        const s: TrackSettings = { scrollStart: 0, deadZone: 0, ...settings };
+        if (!b.valid) { this.current = null; this.open = false; this.fingers = EMPTY_FINGERS; return null; }
+        if (b.events & TOUCH_EV.down) this.begin(b, s, palm);
+        if (!this.open && b.down) this.begin(b, s, palm);
         if (this.open && this.trail.length < 400) this.trail = [...this.trail, { x: b.x, y: b.y }];
         if (this.open) {
             this.events |= b.events;
             this.maxFingers = Math.max(this.maxFingers, b.fingers);
+        }
+        const m = this.multi;
+        if (f?.valid && m) {
+            if (this.open || f.twoTap) {
+                m.palm = palm;
+                m.scrollStart = s.scrollStart;
+                m.maxFingers = Math.max(m.maxFingers, f.fingers.length);
+                for (const p of f.fingers) m.maxArea = Math.max(m.maxArea, p.area);
+                if (f.twoTap) m.twoTap = true;
+                if (f.hadTwo && (f.two || m.hadTwo)) {
+                    m.hadTwo = true;
+                    m.maxTravel = Math.max(m.maxTravel, f.travel);
+                    if (f.scrolled && !m.scrolledAt) m.scrolledAt = Math.max(f.travel, 1);
+                }
+                if (f.two && this.twoTrail.length < 400) {
+                    const [a, c] = f.fingers;
+                    if (a && c) this.twoTrail = [...this.twoTrail, { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }];
+                }
+            }
+            this.fingers = f;
+        } else if (!f) {
+            this.fingers = EMPTY_FINGERS;
         }
         this.touchEvents = this.events;
         this.last = b;
         this.current = b.down ? b : null;
         if (!this.open || b.down) return null;
         this.open = false;
-        return outcome(this.events, this.maxFingers, b, settings);
+        return outcome(this.events, this.maxFingers, b, s, f?.valid && m ? m : undefined);
     }
 
     get latest(): PadTouchBlock {
         return this.last;
     }
-}
-
-export function outcome(events: number, maxFingers: number, b: PadTouchBlock,
-    s: Pick<PadTouchReport, "tapMs" | "holdMs" | "holdOn" | "tapOn" | "twoFingerOn">): TouchOutcome {
-    const base = { ms: b.ms, farthest: b.farthest, downX: b.downX, downY: b.downY, x: b.x, y: b.y };
-    const sec = `${b.ms} ms`;
-    const moved = formatMm(b.farthest);
-    const holdAt = s.tapMs + s.holdMs;
-    // On a pad the computer has as a touchpad these are the chip's decisions; the view says the computer makes the clicks.
-    if (events & TOUCH_EV.twoTap) return { kind: "right", text: `Right click: two fingers, ${sec}`, ...base };
-    if (events & TOUCH_EV.hold) return { kind: "hold", text: `Press and hold at ${holdAt} ms, released at the lift (${sec})`, ...base };
-    if (events & TOUCH_EV.tap) return { kind: "tap", text: `Tap: ${sec}, moved ${moved}`, ...base };
-    if (events & TOUCH_EV.scroll) return { kind: "scroll", text: `Scroll: two fingers, ${sec}`, ...base };
-    if (events & TOUCH_EV.drift) return { kind: "canceled", text: `Canceled: moved ${moved}, out of the dead zone (${sec})`, ...base };
-    if (maxFingers >= 2) return { kind: "short", text: s.twoFingerOn ? `No click: two fingers, ${sec}` : `No click: two-finger tap is off (${sec})`, ...base };
-    if (b.ms < s.tapMs) return { kind: "short", text: s.tapOn ? `No click: ${sec}, moved ${moved}` : `No click: tap to click is off (${sec})`, ...base };
-    if (!s.holdOn) return { kind: "late", text: `No click: ${sec} is past the ${s.tapMs} ms tap time, and press and hold is off`, ...base };
-    if (b.ms >= holdAt) return { kind: "moved", text: `No click: moved ${moved} (a pointer move, ${sec})`, ...base };
-    return { kind: "late", text: `No click: lifted at ${sec}, after the ${s.tapMs} ms tap time and before the ${holdAt} ms hold`, ...base };
 }
 
 // ---------------------------------------------------------------- a chip model
@@ -267,38 +499,106 @@ export interface ChipSettings {
     tapOn: boolean;
     twoFingerOn: boolean;
     holdOn: boolean;
+    /** The scroll start, 0.01 mm (105: the build's own on the native touchpad). */
+    scrollStart?: number;
 }
 
-/** One finger sample: time, position in 0.01 mm, fingers down. */
-export interface TouchSample { t: number; x: number; y: number; fingers: number; strength?: number; area?: number }
+/** One finger in a sample: its slot, position (0.01 mm) and area (channels). */
+export interface TouchPoint { slot: number; x: number; y: number; area?: number }
 
 /**
- * The chip's tap and press-and-hold rules (IQS5xx-B000 datasheet 6.1-6.4),
- * for the simulated board: a tap lifts within the tap time inside the dead
- * zone; press and hold fires at tap time + hold time inside it; leaving the
- * dead zone while either could still fire cancels both.
+ * One sample: time, the first finger's position in 0.01 mm, fingers down, and
+ * every finger (points). Without points, a second finger stands 15 mm to the
+ * right of the first.
+ */
+export interface TouchSample { t: number; x: number; y: number; fingers: number; strength?: number; area?: number; points?: TouchPoint[] }
+
+const DEFAULT_SCROLL = 105;
+
+/**
+ * The chip's rules (IQS5xx-B000 datasheet 6.1-6.7), for the simulated board:
+ * a tap lifts within the tap time inside the dead zone; press and hold fires
+ * at tap time + hold time inside it; leaving the dead zone while either could
+ * still fire cancels both. Two fingers: a two-finger touch starts when a
+ * second lands beside one and lasts while the same two, and only two, stay
+ * down; it scrolls once their average travel passes the scroll start, and is
+ * a two-finger tap when both lift within the tap time, each inside the dead
+ * zone.
  */
 export class ChipModel {
     private block: PadTouchBlock = { ...EMPTY_BLOCK, valid: true };
     private t0 = 0;
     private maxFingers = 0;
+    private f: PadFingersBlock = { ...EMPTY_FINGERS, valid: true };
+    private prevN = 0;
+    private twoAt = 0;
+    private twoSlots: number[] = [];
+    private starts = new Map<number, { x: number; y: number; t: number; far: number }>();
+    private twoBroken = false;
+    private lastPoints: TouchPoint[] = [];
 
     constructor(private settings: () => ChipSettings) {}
+
+    private points(s: TouchSample): TouchPoint[] {
+        if (s.points) return s.points;
+        if (s.fingers <= 0) return [];
+        const out: TouchPoint[] = [{ slot: 0, x: s.x, y: s.y, area: s.area }];
+        for (let i = 1; i < s.fingers; i++) out.push({ slot: i, x: s.x + 1500 * i, y: s.y, area: s.area });
+        return out;
+    }
 
     sample(s: TouchSample): void {
         const cfg = this.settings();
         const b = this.block;
-        if (s.fingers > 0 && !b.down) {
+        const pts = this.points(s);
+        const n = pts.length;
+        if (n > 0 && !b.down) {
             Object.assign(b, { down: true, outside: false, holding: false, farthest: 0, downX: s.x, downY: s.y, x: s.x, y: s.y });
             this.t0 = s.t;
             this.maxFingers = 0;
+            this.twoBroken = false;
+            this.starts.clear();
+            Object.assign(this.f, { hadTwo: false, two: false, scrolled: false, travel: 0, twoMs: 0 });
             b.events |= TOUCH_EV.down;
         }
-        if (s.fingers > 0) {
+        // Each finger's own start and farthest travel (for the two-finger tap).
+        for (const p of pts) {
+            const st = this.starts.get(p.slot);
+            if (!st) this.starts.set(p.slot, { x: p.x, y: p.y, t: s.t, far: 0 });
+            else st.far = Math.max(st.far, Math.hypot(p.x - st.x, p.y - st.y));
+        }
+        for (const slot of [...this.starts.keys()]) if (!pts.some((p) => p.slot === slot) && n > 0) this.starts.delete(slot);
+        // The two-finger touch.
+        if (n === 2 && this.prevN < 2) {
+            Object.assign(this.f, { two: true, hadTwo: true, scrolled: false, travel: 0, twoMs: 0 });
+            this.twoAt = s.t;
+            this.twoSlots = pts.map((p) => p.slot);
+            this.f.startX = Math.round((pts[0].x + pts[1].x) / 2);
+            this.f.startY = Math.round((pts[0].y + pts[1].y) / 2);
+            for (const p of pts) this.starts.set(p.slot, { ...(this.starts.get(p.slot) ?? { t: s.t, far: 0 }), x: p.x, y: p.y });
+        } else if (this.f.two && (n !== 2 || pts.some((p) => !this.twoSlots.includes(p.slot)))) {
+            this.f.two = false;
+            if (n > 2) this.twoBroken = true;
+        }
+        if (n > 2) this.twoBroken = true;
+        if (this.f.two) {
+            const travel = pts.reduce((sum, p) => { const st = this.starts.get(p.slot)!; return sum + Math.hypot(p.x - st.x, p.y - st.y); }, 0) / 2;
+            this.f.travel = Math.round(travel);
+            this.f.twoMs = s.t - this.twoAt;
+            if (!this.f.scrolled && travel > (cfg.scrollStart || DEFAULT_SCROLL)) {
+                this.f.scrolled = true;
+                b.events |= TOUCH_EV.scroll;
+            }
+        }
+        this.prevN = n;
+        this.f.fingers = pts.map((p) => ({ slot: p.slot, x: p.x, y: p.y, area: p.area ?? 0 }));
+        if (n > 0) this.lastPoints = pts;
+
+        if (n > 0) {
             b.x = s.x; b.y = s.y;
             b.strength = s.strength ?? 0;
             b.area = s.area ?? 0;
-            this.maxFingers = Math.max(this.maxFingers, s.fingers);
+            this.maxFingers = Math.max(this.maxFingers, n);
             const d = Math.round(Math.hypot(s.x - b.downX, s.y - b.downY));
             b.farthest = Math.max(b.farthest, d);
             const elapsed = s.t - this.t0;
@@ -312,7 +612,6 @@ export class ChipModel {
                 b.holding = true;
                 b.events |= TOUCH_EV.hold;
             }
-            if (this.maxFingers >= 2 && Math.hypot(s.x - b.downX, s.y - b.downY) > 3 * cfg.deadZone) b.events |= TOUCH_EV.scroll;
             b.ms = elapsed;
         } else if (b.down) {
             const elapsed = s.t - this.t0;
@@ -322,12 +621,21 @@ export class ChipModel {
             b.area = 0;
             b.ms = elapsed;
             b.events |= TOUCH_EV.up;
-            if (!b.outside && elapsed < cfg.tapMs) {
-                if (this.maxFingers >= 2 && cfg.twoFingerOn) b.events |= TOUCH_EV.twoTap;
-                else if (this.maxFingers === 1 && cfg.tapOn) b.events |= TOUCH_EV.tap;
+            if (this.maxFingers === 2 && this.f.hadTwo && !this.twoBroken) {
+                // Two taps at once: each finger inside the dead zone, and lifted within the tap time.
+                const each = this.lastPoints.map((p) => this.starts.get(p.slot));
+                const ok = each.length === 2 && each.every((st) => st && st.far <= cfg.deadZone && s.t - st.t <= cfg.tapMs);
+                if (ok && !this.f.scrolled && cfg.twoFingerOn) {
+                    b.events |= TOUCH_EV.twoTap;
+                    this.f.twoTap = true;
+                }
+            } else if (this.maxFingers === 1 && !b.outside && elapsed < cfg.tapMs && cfg.tapOn) {
+                b.events |= TOUCH_EV.tap;
             }
+            if (this.f.two) { this.f.two = false; }
+            this.starts.clear();
         }
-        b.fingers = s.fingers;
+        b.fingers = n;
     }
 
     /** The block a read returns now; clears the events. */
@@ -335,6 +643,13 @@ export class ChipModel {
         const cfg = this.settings();
         const out = { ...this.block, ms: this.block.down ? now - this.t0 : this.block.ms, tapPx: Math.round(cfg.deadZone * 2048 / PAD_WIDTH_MM100) };
         this.block.events = 0;
+        return out;
+    }
+
+    /** The fingers block a read returns now; clears its two-finger tap. */
+    readFingers(now: number): PadFingersBlock {
+        const out: PadFingersBlock = { ...this.f, fingers: [...this.f.fingers], twoMs: this.f.two ? now - this.twoAt : this.f.twoMs };
+        this.f.twoTap = false;
         return out;
     }
 }

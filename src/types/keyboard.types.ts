@@ -31,6 +31,7 @@ export interface KeyboardInfo {
     leader_count?: number;                   // NEW
     feature_flags2?: number;                 // Second feature byte, after the storage flags; zero on older firmware
     feature_flags3?: number;                 // Third feature byte (GET_INFO byte 20); zero on older firmware
+    feature_flags4?: number;                 // Fourth feature byte (GET_INFO byte 21); zero on older firmware
     feature_flags?: number;                  // NEW: Svil feature flags
     keycode_version?: string;                // QMK keycode numbering the keycodes are in, e.g. "0.0.9"
     storage_reset?: boolean;                 // board reset its settings: its storage could not be read

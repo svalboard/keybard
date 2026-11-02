@@ -10,6 +10,7 @@ import { KleService } from "./kle.service";
 import { usableTapdanceTerm } from "@/utils/tapdance-term";
 import { isOverrideEnabled, overrideOptionsFromFile } from '@/utils/key-override';
 import { importBalls, savedBalls } from "./pointing-look.service";
+import { NOT_LAYOUT_VALUES } from "../utils/touchpad-tuning";
 
 // Default template for KBINFO if needed (simplified from SVALBOARD)
 const DEFAULT_KB_INFO: any = {
@@ -510,6 +511,8 @@ export class FileService {
             for (const entry of kbinfo.custom_values) {
                 // Skip layer colors (already handled above)
                 if (entry.key.match(/^id_layer\d+_color$/)) continue;
+                // Per-board settings that aren't layout (the touchpad mode).
+                if (NOT_LAYOUT_VALUES.includes(entry.key)) continue;
                 customValues.push({
                     key: entry.key,
                     channel: entry.channel,

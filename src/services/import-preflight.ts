@@ -13,6 +13,7 @@ import { sameCombo } from '../utils/combo-names';
 import { boardMenuRefs, migrateCustomValues, type SettingReplacement } from './settings-migrate';
 import { customValueLabel, qmkSettingLabel } from '../utils/setting-labels';
 import { VARIABLE_LIMITS, ZERO_REPLACED_SETTINGS, ZERO_SETTINGS_RELEASE } from '../constants/qmk-settings';
+import { NOT_LAYOUT_VALUES } from "../utils/touchpad-tuning";
 
 export interface ImportReview {
     keyboard: KeyboardInfo;
@@ -134,7 +135,8 @@ export function prepareImport(file: KeyboardInfo, current?: KeyboardInfo): Impor
     const boardRefs = boardMenuRefs(current.menus);
     const menuItems = new Map([...boardRefs].map(([key, { item }]) => [key, item]));
     // Settings a firmware release replaced land on their replacement, either way round.
-    const migrated = migrateCustomValues(file.custom_values ?? [], boardRefs);
+    // Per-board settings that aren't layout (the touchpad mode) are never imported.
+    const migrated = migrateCustomValues((file.custom_values ?? []).filter(entry => !NOT_LAYOUT_VALUES.includes(entry.key)), boardRefs);
     replaced = [...replaceZeroSettings(next.settings), ...limited, ...migrated.replaced];
     // Layer colors are custom values on the board; the file loader keeps them in layer_colors.
     const layerColorValues = (file.layer_colors ?? []).flatMap((color, layer) =>

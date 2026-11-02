@@ -13,6 +13,19 @@ const board = (overrides: Partial<KeyboardInfo> = {}): KeyboardInfo => ({
 });
 
 describe('import preflight', () => {
+    it('never carries the touchpad mode (a per-board setting, not layout)', () => {
+        const menus = [{ label: 'Pointing Device', content: [
+            { label: 'Touchpad Mode', type: 'dropdown', options: ['Automatic', 'Built-in gestures'], content: ['id_pad_touchpad_mode', 0, 59] },
+            { label: 'Tap to Click', type: 'toggle', content: ['id_pad_tap', 0, 51] },
+        ] }] as never;
+        const current = board({ menus, custom_values: [{ key: 'id_pad_touchpad_mode', channel: 0, valueId: 59, data: [0] }, { key: 'id_pad_tap', channel: 0, valueId: 51, data: [1] }] });
+        const file = board({ menus, custom_values: [{ key: 'id_pad_touchpad_mode', channel: 0, valueId: 59, data: [1] }, { key: 'id_pad_tap', channel: 0, valueId: 51, data: [0] }] });
+        const review = prepareImport(file, current);
+        expect(review.keyboard.custom_values?.find(v => v.key === 'id_pad_touchpad_mode')?.data).toEqual([0]);
+        expect(review.keyboard.custom_values?.find(v => v.key === 'id_pad_tap')?.data).toEqual([0]);
+        expect(review.unavailable ?? []).not.toContain('Touchpad Mode');
+    });
+
     it('is read-only and preserves unimported layers while clearing explicitly blank labels', () => {
         const send = vi.spyOn(usbInstance, 'sendSvil');
         const current = board();
