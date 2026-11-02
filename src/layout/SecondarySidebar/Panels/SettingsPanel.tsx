@@ -21,7 +21,8 @@ import { hasPadTuning, TUNE_TOUCHPAD_LABEL } from "@/utils/touchpad-tuning";
 import FirmwareRow from "./settings/FirmwareRow";
 import SettingRow from "./settings/SettingRow";
 import { onSettingsSectionRequest, takeSettingsSectionRequest } from "./settings/anchor";
-import { SETTINGS_PAGE, type SettingsBlock, type SettingsRow, type SettingsSection } from "./settings/layout";
+import { SETTINGS_PAGE, shownPage, type SettingsBlock, type SettingsRow, type SettingsSection } from "./settings/layout";
+import { hasDebugConsole } from "@/services/debug-console";
 import { useStickySections } from "./settings/useStickySections";
 import { highlightParts, rowKey, searchSettings } from "./settings/search";
 
@@ -85,7 +86,12 @@ const SettingsPanel = () => {
 
     const searchRef = useRef<HTMLInputElement>(null);
     const [query, setQuery] = useState("");
-    const matches = useMemo(() => searchSettings(SETTINGS_PAGE, query, getSettingDefinition), [query, getSettingDefinition]);
+    // Touchpad tuning shows only on a board with a touchpad and firmware that has the setting;
+    // the Debug console row only on firmware with the command.
+    const touchpadShown = !!keyboard && hasPadTuning(keyboard.feature_flags3) && boardHasTouchpad(keyboard);
+    const debugShown = isConnected && hasDebugConsole(keyboard?.feature_flags4);
+    const pageSections = useMemo(() => shownPage({ touchpad: touchpadShown, debugConsole: debugShown }), [touchpadShown, debugShown]);
+    const matches = useMemo(() => searchSettings(pageSections, query, getSettingDefinition), [pageSections, query, getSettingDefinition]);
     const searching = matches !== null;
 
     const highlight = useCallback((text: string): ReactNode => {
@@ -197,9 +203,6 @@ const SettingsPanel = () => {
         );
     };
 
-    // Touchpad tuning shows only on a board with a touchpad and firmware that has the setting.
-    const touchpadShown = !!keyboard && hasPadTuning(keyboard.feature_flags3) && boardHasTouchpad(keyboard);
-    const pageSections = SETTINGS_PAGE.filter((section) => section.id !== "touchpad" || touchpadShown);
     const visibleSections = pageSections.filter((section) => !matches || matches.has(section.id));
 
     const renderSection = (section: SettingsSection) => {

@@ -10,7 +10,8 @@ Svalboard (?fakeBoard). Run with `npm run test:e2e:debug-console`.
   2. A board that starts again (a reload: the simulated board starts over, as
      at a power-up) reads Off.
   3. Firmware without the command (?fakeBoard=touchpad-434, ?fakeBoard=old)
-     and the example layout (no board) show no row and send no 0x3E.
+     and the example layout (no board) show no row and send no 0x3E, and
+     searching a word only that row has finds nothing.
   4. Searching "debug" or "console" finds the row.
   5. The row's switch sits beside its label at 1440 and 390 px, light and
      dark, in the side panel and the bottom bar, with no sideways scroll; its
@@ -112,6 +113,9 @@ def flow_not_shown(browser, url):
         page.wait_for_timeout(500)
         assert page.locator(ROW).count() == 0, f"{board}: row shown"
         assert page.evaluate(REQUESTS_JS) == [], f"{board}: sent 0x3E"
+        # Search never finds the hidden row: a word only it has finds nothing.
+        page.get_by_label("Search settings").fill("logging")
+        expect(page.get_by_text("Nothing in Settings matches")).to_be_visible(timeout=5000)
         assert not errors, errors
         context.close()
     context, page, errors = open_page(browser, url, board="", query="demo=combos&panel=settings")

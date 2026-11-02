@@ -132,6 +132,21 @@ export const SETTINGS_PAGE: SettingsSection[] = [
 /** Sections shown only on some boards: Touchpad tuning needs a touchpad and firmware with the setting. */
 export const CONDITIONAL_SECTIONS = ["touchpad"] as const;
 
+/** Blocks shown only on some boards: the debug console needs firmware with the command. */
+export const CONDITIONAL_BLOCKS = ["debug"] as const;
+
+/**
+ * The page this board shows: without a touchpad (and the setting) no Touchpad
+ * tuning card, and without the debug console command no Debug console row.
+ * Search and rendering both use it, so a search never finds a hidden row.
+ */
+export function shownPage(board: { touchpad: boolean; debugConsole: boolean }, page: SettingsSection[] = SETTINGS_PAGE): SettingsSection[] {
+    return page
+        .filter((section) => section.id !== "touchpad" || board.touchpad)
+        .map((section) => (board.debugConsole ? section
+            : { ...section, rows: section.rows.filter((row) => !("block" in row && row.block === "debug")) }));
+}
+
 /**
  * Settings that have a definition in SETTINGS but are deliberately not on this
  * page, with their one home. A definition that is in neither list fails a test.
