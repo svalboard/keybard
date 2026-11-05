@@ -3,6 +3,7 @@
 // settings); "firmware" is the program on the halves, and appears only as a muted detail.
 
 import type { SnapshotMeta } from "./store";
+import { firmwareName } from "@/constants/firmware-releases";
 
 type Snap = Pick<SnapshotMeta, "kind" | "savedAt" | "fromTag" | "boardName">;
 
@@ -40,7 +41,9 @@ export function backupLine(snap: Snap, o: { now?: number; ofBoard?: boolean; jus
     return `Backup${of} saved ${why}, ${backupWhen(snap.savedAt, o.now)}`;
 }
 
-/** The muted detail: "saved from x4test10 firmware", when Keybard knows it. */
+/** The muted detail: "saved from Unstable firmware x4.4" ("saved from x4test10 firmware" for other builds), when Keybard knows it. */
 export function backupFirmwareNote(snap: Pick<SnapshotMeta, "fromTag">): string | null {
-    return snap.fromTag ? `saved from ${snap.fromTag} firmware` : null;
+    if (!snap.fromTag) return null;
+    const named = firmwareName(snap.fromTag);
+    return named === snap.fromTag ? `saved from ${snap.fromTag} firmware` : `saved from ${named}`;
 }

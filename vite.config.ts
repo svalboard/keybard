@@ -4,6 +4,7 @@ import path from "path";
 import { defineConfig, loadEnv } from "vite";
 import { execSync } from "child_process";
 import { paranoidPlugins, bundledLayersPlugin } from "./build/paranoid";
+import { currentSite, versionFile } from "./src/constants/firmware-releases";
 
 // Get current git branch for labeling and port assignment.
 // Falls back to env var (set by CI: GitHub Actions detached-HEAD checkouts
@@ -71,6 +72,19 @@ export default defineConfig(({ mode }) => {
         tailwindcss(),
         bundledLayersPlugin(paranoid, path.resolve(__dirname)),
         ...(paranoid ? paranoidPlugins(path.resolve(__dirname)) : []),
+        {
+            // version.json at the site root names the release this deploy serves,
+            // so the other site can show it (src/utils/site-versions.ts). Only
+            // release builds have one; Paranoid is a single file and has none.
+            name: "keybard-version-file",
+            apply: "build",
+            generateBundle() {
+                const site = currentSite({ MODE: mode, VITE_CHANNEL: env.VITE_CHANNEL, BASE_URL: env.VITE_BASE_PATH });
+                const file = paranoid ? null : versionFile(releaseTag, site);
+                if (!file) return;
+                this.emitFile({ type: "asset", fileName: "version.json", source: `${JSON.stringify(file)}\n` });
+            },
+        },
         {
             name: "git-branch-endpoint",
             configureServer(server) {

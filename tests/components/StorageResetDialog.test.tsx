@@ -254,7 +254,7 @@ describe('StorageResetDialog', () => {
 
         it('names each half when they differ, and a half that did not answer', () => {
             expect(firmwareLine(board([half(0, 'build 8', 8, false), half(1, 'x4test9', 9, true)]) as never, null)).toBe('build 8 on the left half, x4test9 on the right half');
-            expect(firmwareLine(board([half(0, '', 0, false, false), half(1, 'x4', 9, true)]) as never, null)).toBe("x4 on the right half (the left half didn't answer)");
+            expect(firmwareLine(board([half(0, '', 0, false, false), half(1, 'x4', 9, true)]) as never, null)).toBe("Unstable firmware x4 on the right half. The left half didn't answer.");
             expect(firmwareLine(null, 'Svalboard QMK v3')).toBe('Svalboard QMK v3');
             expect(firmwareLine(null, null)).toBeNull();
         });

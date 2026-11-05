@@ -28,6 +28,7 @@ import type { KeyboardInfo } from "@/types/keyboard.types";
 /** Ask the app to show Backups (FirmwareUpdateProvider listens). */
 export { OPEN_BACKUPS_EVENT } from "@/features/firmware/useHalvesDiffer";
 import { OPEN_BACKUPS_EVENT } from "@/features/firmware/useHalvesDiffer";
+import { firmwareName } from "@/constants/firmware-releases";
 
 
 /** How long a backup taken before an update counts as the one for the install that just reset the board. */
@@ -57,7 +58,7 @@ export function pickResetBackup(snapshots: SnapshotMeta[], boardKey: string, cur
 }
 
 /**
- * The firmware the board runs now, for the reset notice's Firmware line: "x4 on both halves",
+ * The firmware the board runs now, for the reset notice's Firmware line: "Unstable firmware x4 on both halves",
  * each half's when they differ, or what the half with USB says when that's all Keybard can read.
  */
 export function firmwareLine(board: BoardSummary | null | undefined, fallback: string | null): string | null {
@@ -65,16 +66,17 @@ export function firmwareLine(board: BoardSummary | null | undefined, fallback: s
         const answered = board.halves.filter((h) => h.answered);
         const usb = board.halves.find((h) => h.usb) ?? answered[0];
         if (answered.length === 2) {
-            if (answered[0].fwVersion === answered[1].fwVersion) return `${usb?.tag || board.tag} on both halves`;
+            if (answered[0].fwVersion === answered[1].fwVersion) return `${firmwareName(usb?.tag || board.tag)} on both halves`;
             const [left, right] = [0, 1].map((h) => answered.find((x) => x.hand === h)!);
-            return `${left.tag} on the left half, ${right.tag} on the right half`;
+            return `${firmwareName(left.tag)} on the left half, ${firmwareName(right.tag)} on the right half`;
         }
         if (answered.length === 1) {
             const h = answered[0];
-            return `${h.tag} on the ${handName(h.hand)} half (the ${handName(otherHand(h.hand))} half didn't answer)`;
+            return `${firmwareName(h.tag)} on the ${handName(h.hand)} half. The ${handName(otherHand(h.hand))} half didn't answer.`;
         }
     }
-    return board?.tag || board?.legacyLabel || fallback || null;
+    const label = board?.tag || board?.legacyLabel || fallback || null;
+    return label ? firmwareName(label) : null;
 }
 
 /** The reset notice's width: its three answers fit one row on a desktop. */

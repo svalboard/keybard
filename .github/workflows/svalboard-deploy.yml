@@ -63,6 +63,8 @@ jobs:
           GIT_BRANCH: main
           GIT_SHA: ${{ steps.meta.outputs.sha }}
           GIT_SUBJECT: ${{ steps.meta.outputs.subject }}
+      - name: Check version.json names this release
+        run: bash .github/scripts/version-file.sh "$RELEASE_TAG" dist
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

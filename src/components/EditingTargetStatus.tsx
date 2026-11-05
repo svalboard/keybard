@@ -1,6 +1,7 @@
 import { useKeyboard } from "@/contexts/KeyboardContext";
 import { isKnownKeycodeVersion, LATEST_KEYCODE_VERSION } from "@/constants/keycode-numbering";
 import { describeFirmware } from "@/constants/firmware";
+import { runsFirmware } from "@/constants/firmware-releases";
 import { UnsupportedFirmwareCard } from "@/components/FirmwareUpdate";
 import { HalvesDifferBanner } from "@/features/firmware/HalvesDifferBanner";
 
@@ -16,7 +17,7 @@ export default function EditingTargetStatus() {
                 <span className="font-medium break-words [overflow-wrap:anywhere]">
                     {isConnected ? "Editing keyboard" : "Offline draft"}: {loadedFrom || keyboard.name || "Layout"}
                 </span>
-                {firmware && <span>. Firmware: {firmware}</span>}
+                {firmware && <span>. {runsFirmware(firmware)}</span>}
                 {!isConnected && <span>No keyboard writes. Export to keep edits.</span>}
                 {(isChangingTarget || connectionState === "loading") && <span>Changing connection…</span>}
             </div>

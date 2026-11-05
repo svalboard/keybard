@@ -5,6 +5,8 @@ dist
 dist-paranoid
 # Build served by the browser tests (npm run test:e2e)
 .e2e-dist
+.e2e-dist-about-*
+.tmp-*
 .DS_Store
 coverage/
 docs/dev-sessions/

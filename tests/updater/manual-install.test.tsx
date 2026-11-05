@@ -179,7 +179,7 @@ describe("an install by hand closed before the keyboard came back (reconnected w
         flash(board, 0);
         flash(board, 1);
         await reconnect("p:2", true);
-        await waitFor(() => expect(screen.getByRole("heading", { name: "x4 is installed" })).toBeTruthy());
+        await waitFor(() => expect(screen.getByRole("heading", { name: "Unstable firmware x4 is installed" })).toBeTruthy());
         expect(host.restores).toBe(1);
         expect(screen.getByText(/Your layout is back on the keyboard\./)).toBeTruthy();
         sessionStorage.clear();
@@ -203,7 +203,7 @@ describe("an install by hand closed before the keyboard came back (reconnected w
         expect(manualOwnsResetNotice()).toBe(true);
         board.request = request;
         await reconnect("p:3");
-        await waitFor(() => expect(screen.getByRole("heading", { name: "x4 is installed" })).toBeTruthy());
+        await waitFor(() => expect(screen.getByRole("heading", { name: "Unstable firmware x4 is installed" })).toBeTruthy());
         expect(host.restores).toBe(1);
         sessionStorage.clear();
     });
@@ -226,7 +226,7 @@ describe("an install by hand closed before the keyboard came back (reconnected w
         flash(board, 1);
         view.unmount();
         render(<Editor host={host} store={store} connectionKey="p:2" />);
-        await waitFor(() => expect(screen.getByRole("heading", { name: "x4 is installed" })).toBeTruthy());
+        await waitFor(() => expect(screen.getByRole("heading", { name: "Unstable firmware x4 is installed" })).toBeTruthy());
         expect(host.restores).toBe(1);
         sessionStorage.clear();
     });
@@ -236,7 +236,7 @@ describe("an install by hand closed before the keyboard came back (reconnected w
         fireEvent.click(screen.getByRole("button", { name: "Close the dialog" }));
         flash(board, 1);
         await reconnect("p:2");
-        await waitFor(() => expect(screen.getByRole("heading", { name: "The left half still runs x3.1.3" })).toBeTruthy());
+        await waitFor(() => expect(screen.getByRole("heading", { name: "The left half still runs Unstable firmware x3.1.3" })).toBeTruthy());
         expect(host.restores).toBe(0);
     });
 
@@ -266,7 +266,7 @@ describe("Install by hand from Settings > Firmware", () => {
     it("is plain instructions: the layout choice, one file, the steps with the reset timing, and no Next or check marks", async () => {
         await opened();
         const dialog = screen.getByTestId("manual-install");
-        expect(screen.getByRole("heading", { name: "Install x4 by hand" })).toBeTruthy();
+        expect(screen.getByRole("heading", { name: "Install Unstable firmware x4 by hand" })).toBeTruthy();
         expect(screen.getByText("Your keyboard needs this once. After that, Keybard installs updates for you. It takes a few minutes.")).toBeTruthy();
         expect(radio("Restore my layout").checked).toBe(true);
         expect(radio("Restore my layout").disabled).toBe(false);
@@ -316,7 +316,7 @@ describe("Install by hand from Settings > Firmware", () => {
         // Back on a new connection: the editor unmounts and mounts again, the dialog carries on.
         view.unmount();
         render(<Editor host={host} store={store} connectionKey="p:2" />);
-        await waitFor(() => expect(screen.getByRole("heading", { name: "x4 is installed" })).toBeTruthy());
+        await waitFor(() => expect(screen.getByRole("heading", { name: "Unstable firmware x4 is installed" })).toBeTruthy());
         expect(screen.getByText("Your layout is back on the keyboard. From now on, updates install from Keybard.")).toBeTruthy();
         expect(host.restores).toBe(1);
         expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
@@ -326,17 +326,17 @@ describe("Install by hand from Settings > Firmware", () => {
         const { board, host, reconnect } = await opened();
         flash(board, 1); // the right half, with USB
         await reconnect("p:2");
-        await waitFor(() => expect(screen.getByRole("heading", { name: "The left half still runs x3.1.3" })).toBeTruthy());
-        expect(screen.getByText("The right half has x4. Install the file on the left half, then connect again.")).toBeTruthy();
+        await waitFor(() => expect(screen.getByRole("heading", { name: "The left half still runs Unstable firmware x3.1.3" })).toBeTruthy());
+        expect(screen.getByText("The right half has Unstable firmware x4. Install the file on the left half, then connect again.")).toBeTruthy();
         const dialog = screen.getByTestId("manual-install");
         expect(dialog.querySelectorAll("[data-file]")).toHaveLength(1);
         expect(dialog.textContent).toContain("Plug the USB cable into the left half's U port.");
         expect(dialog.textContent).not.toContain("updates by itself");
-        expect(within(screen.getByTestId("manual-halves")).getByText("x3.1.3")).toBeTruthy();
+        expect(within(screen.getByTestId("manual-halves")).getByText("Unstable firmware x3.1.3")).toBeTruthy();
         expect(host.restores).toBe(0);
         flash(board, 0);
         await reconnect("p:3");
-        await waitFor(() => expect(screen.getByRole("heading", { name: "x4 is installed" })).toBeTruthy());
+        await waitFor(() => expect(screen.getByRole("heading", { name: "Unstable firmware x4 is installed" })).toBeTruthy());
         expect(host.restores).toBe(1);
     });
 
@@ -353,8 +353,8 @@ describe("Install by hand from Settings > Firmware", () => {
         const { host, reconnect } = await opened();
         await reconnect("p:2");
         await waitFor(() => expect(screen.getByTestId("manual-still")).toBeTruthy());
-        expect(screen.getByTestId("manual-still").textContent).toBe("The right half still runs x3.1.3. Install the file on it, then connect again.");
-        expect(screen.getByRole("heading", { name: "Install x4 by hand" })).toBeTruthy();
+        expect(screen.getByTestId("manual-still").textContent).toBe("The right half still runs Unstable firmware x3.1.3. Install the file on it, then connect again.");
+        expect(screen.getByRole("heading", { name: "Install Unstable firmware x4 by hand" })).toBeTruthy();
         expect(screen.getByRole("button", { name: "Connect again" })).toBeTruthy();
         expect(host.restores).toBe(0);
     });
@@ -383,7 +383,7 @@ describe("Install by hand from Settings > Firmware", () => {
         expect(sides!.writes).toEqual([]);
         // The plugged-in half is the right one, so the likely answer for it is Right half.
         fireEvent.click(screen.getByRole("button", { name: "Right half" }));
-        await waitFor(() => expect(screen.getByRole("heading", { name: "x4 is installed" })).toBeTruthy());
+        await waitFor(() => expect(screen.getByRole("heading", { name: "Unstable firmware x4 is installed" })).toBeTruthy());
         expect(sides!.writes).toEqual([{ role: "other", side: "left", status: 7 }]);
         expect(host.restores).toBe(1);
     });

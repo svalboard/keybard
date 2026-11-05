@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { FwTitle } from "./parts";
 import type { Failure, FailureId } from "@/services/updater/flow";
 import { handName, type Hand } from "@/services/updater/protocol";
+import { firmwareName } from "@/constants/firmware-releases";
 
 export type FailureAction = "retry" | "close" | "reload" | "finish" | "manual" | "download" | "keep-waiting" | "copy-command" | "reconnect" | "backups" | "keep-defaults";
 
@@ -24,8 +25,9 @@ interface FailureCopy {
 /** Title, one line and buttons for a failure, filled in from what's known. */
 export function failureCopy(f: Failure, o: { fromTag?: string; udevCommand?: string } = {}): FailureCopy {
     const tags = f.tags ?? {};
-    const runs = o.fromTag ?? tags[1] ?? tags[0];
-    const both = tags[0] !== undefined && tags[1] !== undefined ? `Left half ${tags[0]} · Right half ${tags[1]}` : "";
+    const runsTag = o.fromTag ?? tags[1] ?? tags[0];
+    const runs = runsTag ? firmwareName(runsTag) : runsTag;
+    const both = tags[0] !== undefined && tags[1] !== undefined ? `Left half ${firmwareName(tags[0])} · Right half ${firmwareName(tags[1])}` : "";
     const table: Record<FailureId, FailureCopy> = {
         F2: { title: "Firmware file failed its check", body: "Keybard won't install it. Reload Keybard and try again.", actions: [{ action: "reload", label: "Reload", primary: true }, { action: "close", label: "Close" }] },
         F3: { title: "Another app is using the keyboard", body: "Close other Keybard tabs and the overlay, then try again.", actions: [{ action: "retry", label: "Try again", primary: true }] },

@@ -21,6 +21,7 @@ import { LayoutChoice } from "./LayoutChoice";
 import { FwTitle, Problem, SectionLabel, Spinner } from "./parts";
 import { SideFix } from "./SideFix";
 import { ImportSettingsNotes } from "@/components/ImportSettingsNotes";
+import { firmwareName } from "@/constants/firmware-releases";
 
 /** The backup as the instructions show it. */
 export type ManualBackupView = { state: "pending" } | { state: "ok"; fileName: string } | { state: "failed"; error?: string };
@@ -66,7 +67,7 @@ function Files({ release }: { release: FirmwareReleasePin | null }) {
     return (
         <a href={carriedFileUrl(release, name)} download={name} data-file="both"
             className="flex min-w-0 flex-col gap-0.5 rounded-md border border-kb-gray-border px-3 py-2.5 text-kb-ink hover:border-kb-primary">
-            <span className="text-sm font-semibold">{release.tag} for both halves</span>
+            <span className="text-sm font-semibold">{firmwareName(release.tag)} for both halves</span>
             <span className="break-all font-mono text-xs text-muted-foreground">{name}</span>
         </a>
     );
@@ -113,7 +114,7 @@ function Halves({ check, tag }: { check: ManualCheck; tag: string }) {
         return (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm tabular-nums" data-testid="manual-halves">
                 <dt>Plugged-in half</dt>
-                <dd data-half="plugged" data-state={s.state} className="font-semibold text-kb-warn-ink">{s.state === "old" ? s.tag ?? "its old firmware" : "not checked"}</dd>
+                <dd data-half="plugged" data-state={s.state} className="font-semibold text-kb-warn-ink">{s.state === "old" ? (s.tag ? firmwareName(s.tag) : "its old firmware") : "not checked"}</dd>
             </dl>
         );
     }
@@ -124,7 +125,7 @@ function Halves({ check, tag }: { check: ManualCheck; tag: string }) {
                 return [
                     <dt key={`t${h}`}>{HALF_LABEL(h)}</dt>,
                     <dd key={`d${h}`} data-half={handName(h)} data-state={s.state} className={s.state === "new" ? "font-semibold text-kb-primary" : "font-semibold text-kb-warn-ink"}>
-                        {s.state === "new" ? tag : s.state === "old" ? s.tag ?? "its old firmware" : s.state === "silent" ? "didn't answer" : "not checked"}
+                        {s.state === "new" ? tag : s.state === "old" ? (s.tag ? firmwareName(s.tag) : "its old firmware") : s.state === "silent" ? "didn't answer" : "not checked"}
                     </dd>,
                 ];
             })}
@@ -134,7 +135,7 @@ function Halves({ check, tag }: { check: ManualCheck; tag: string }) {
 
 /** One line on what the last Connect found, for the instructions screen. */
 function stillLine(check: ManualCheck, pending: Hand[], tag: string, usual: Hand | null): string {
-    if (check.plugged?.state === "old") return `The plugged-in half still runs ${check.plugged.tag ?? "its old firmware"}. Install the file on both halves, then connect again.`;
+    if (check.plugged?.state === "old") return `The plugged-in half still runs ${check.plugged.tag ? firmwareName(check.plugged.tag) : "its old firmware"}. Install the file on both halves, then connect again.`;
     const st = (h: Hand) => check.halves[h] as ManualHalfState | undefined;
     if (pending.every((h) => st(h)?.state === "unknown")) return "Keybard couldn't read the keyboard's firmware yet. Connect again to check.";
     if (pending.length === 2 && pending.every((h) => st(h)?.state === "old")) return `Neither half runs ${tag} yet. Install the file, then connect again.`;
@@ -142,7 +143,7 @@ function stillLine(check: ManualCheck, pending: Hand[], tag: string, usual: Hand
     const unknown = pending.find((h) => st(h)?.state === "unknown");
     const say = (h: Hand) => {
         const s = st(h);
-        if (s?.state === "old") return `The ${handName(h)} half still runs ${s.tag ?? "its old firmware"}.`;
+        if (s?.state === "old") return `The ${handName(h)} half still runs ${s.tag ? firmwareName(s.tag) : "its old firmware"}.`;
         if (s?.state === "silent") return `The ${handName(h)} half didn't answer.`;
         return "";
     };
@@ -155,7 +156,7 @@ function stillLine(check: ManualCheck, pending: Hand[], tag: string, usual: Hand
 }
 
 export function ManualInstall({ release, only, usualHand = null, once = false, backup, afterwards, onAfterwards, check = null, outcome, onConnect, onClose, onOpenBackups, onSides, sidesBusy, sidesNote }: ManualInstallProps) {
-    const tag = release?.tag ?? "the newest firmware";
+    const tag = release ? firmwareName(release.tag) : "the newest firmware";
     const halves = manualHalves(only, usualHand);
     const phase = outcome?.phase ?? "steps";
     const onHalf = only !== undefined ? ` on the ${handName(only)} half` : "";
@@ -214,7 +215,7 @@ export function ManualInstall({ release, only, usualHand = null, once = false, b
         const s = check.halves[one]!;
         const other = otherHand(one);
         const otherNew = only === undefined && check.halves[other]?.state === "new";
-        const title = s.state === "silent" ? `The ${handName(one)} half didn't answer` : `The ${handName(one)} half still runs ${s.state === "old" && s.tag ? s.tag : "its old firmware"}`;
+        const title = s.state === "silent" ? `The ${handName(one)} half didn't answer` : `The ${handName(one)} half still runs ${s.state === "old" && s.tag ? firmwareName(s.tag) : "its old firmware"}`;
         const lead = otherNew ? `The ${handName(other)} half has ${tag}. ` : "";
         const sub = s.state === "silent"
             ? `${lead}The ${handName(one)} half may still run its old firmware, which doesn't answer over the split cable. Install the file on it, then connect again.`

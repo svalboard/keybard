@@ -75,7 +75,7 @@ describe("carried releases per site", () => {
 
 function fs(step: Step, o: Partial<FlowState> = {}): FlowState {
     return {
-        version: 1, id: "t", phase: "running", target: "both", usbHand: 1, title: "Update to x4", toTag: "x4", fromTag: "v3", files: {},
+        version: 1, id: "t", phase: "running", target: "both", usbHand: 1, title: "Update to Unstable firmware x4", toTag: "x4", fromTag: "v3", files: {},
         afterwards: "restore", backup: null, noChord: false, step, stepAt: 0, approveAt: 0, committed: [], halvesDone: [], approvalsAsked: 1,
         rows: [{ hand: 0, usb: false, stage: "waiting", progress: 0, fromTag: "v3", toTag: "x4" }, { hand: 1, usb: true, stage: "waiting", progress: 0, fromTag: "v3", toTag: "x4" }],
         settingsResetSent: false, sent2A: false, startedAt: 0, finishedAt: null, result: null, failure: null, measurements: {}, ...o,
@@ -158,16 +158,16 @@ describe("the running screens (5.1)", () => {
     });
 
     it("titles Done by what's installed", () => {
-        expect(resultTitle(fs("done", { title: "Update to x4" }))).toBe("x4 is installed");
-        expect(resultTitle(fs("done", { title: "Update to x4", target: 0 }))).toBe("x4 is installed on the left half");
+        expect(resultTitle(fs("done", { title: "Update to Unstable firmware x4" }))).toBe("Unstable firmware x4 is installed");
+        expect(resultTitle(fs("done", { title: "Update to Unstable firmware x4", target: 0 }))).toBe("Unstable firmware x4 is installed on the left half");
         expect(resultTitle(fs("done", { title: "Install custom firmware" }))).toBe("The custom firmware is installed");
     });
 
     it("words the failures with their exact next step, and never asks to approve", () => {
-        expect(failureCopy({ id: "F9", tags: { 0: "x4", 1: "v3" } })).toMatchObject({ title: "Halves differ", body: "Left half x4 · Right half v3" });
+        expect(failureCopy({ id: "F9", tags: { 0: "x4", 1: "v3" } })).toMatchObject({ title: "Halves differ", body: "Left half Unstable firmware x4 · Right half Stable firmware v3" });
         render(<>{failureCopy({ id: "F5", detail: "The keyboard's copy doesn't match the file." }, { fromTag: "v3" }).body}</>);
         expect(screen.getByText("The keyboard's copy doesn't match the file.")).toBeTruthy();
-        expect(screen.getByText("Nothing was changed: your keyboard still runs v3.")).toBeTruthy();
+        expect(screen.getByText("Nothing was changed: your keyboard still runs Stable firmware v3.")).toBeTruthy();
         expect(failureCopy({ id: "F11", hand: 0 }).title).toBe("Left half needs its firmware installed by hand");
         expect(failureCopy({ id: "F4" }).title).toBe("The keys weren't pressed in time");
     });
@@ -183,14 +183,14 @@ describe("the Firmware card (D2)", () => {
     it("shows each half and the newest release with one button; the rest is under Other versions and files", () => {
         const onInstall = vi.fn();
         render(<FirmwareSection board={board()} releases={releases} onInstall={onInstall} onManual={vi.fn()} paranoid={false} />);
-        expect(screen.getByTestId("firmware-halves").textContent).toBe("Left halfv3Right halfv3 · plugged in");
-        expect(screen.getByText("x4 is available")).toBeTruthy();
-        expect(screen.getByRole("link", { name: "What's new in x4 ↗" })).toHaveAttribute("href", "https://example.com/x4");
+        expect(screen.getByTestId("firmware-halves").textContent).toBe("Left halfStable firmware v3Right halfStable firmware v3 · plugged in");
+        expect(screen.getByText("Unstable firmware x4 is available")).toBeTruthy();
+        expect(screen.getByRole("link", { name: "What's new in Unstable firmware x4 ↗" })).toHaveAttribute("href", "https://example.com/x4");
         expect(screen.queryByRole("button", { name: "Install a firmware file…" })).toBeNull();
-        fireEvent.click(screen.getByRole("button", { name: "Update to x4" }));
+        fireEvent.click(screen.getByRole("button", { name: "Update to Unstable firmware x4" }));
         expect(onInstall).toHaveBeenCalledWith({ kind: "release", release: releases[0] });
         fireEvent.click(screen.getByRole("button", { name: "Other versions and files" }));
-        fireEvent.click(screen.getByRole("button", { name: "Reinstall v3" }));
+        fireEvent.click(screen.getByRole("button", { name: "Reinstall Stable firmware v3" }));
         expect(onInstall).toHaveBeenLastCalledWith({ kind: "release", release: releases[1] });
         expect(screen.getByRole("button", { name: "Install a firmware file…" })).toBeTruthy();
         fireEvent.click(screen.getByRole("button", { name: "Update one half only…" }));
@@ -204,8 +204,8 @@ describe("the Firmware card (D2)", () => {
         expect(screen.queryByRole("button", { name: /Update to/ })).toBeNull();
         const onManual = vi.fn();
         rerender(<FirmwareSection board={board({ updater: false, legacyLabel: "x3.1.3", halves: [] })} releases={releases} onInstall={vi.fn()} onManual={onManual} paranoid={false} />);
-        expect(screen.getByTestId("firmware-halves").textContent).toBe("Right halfx3.1.3 · plugged in");
-        fireEvent.click(screen.getByRole("button", { name: "Update to x4" }));
+        expect(screen.getByTestId("firmware-halves").textContent).toBe("Right halfUnstable firmware x3.1.3 · plugged in");
+        fireEvent.click(screen.getByRole("button", { name: "Update to Unstable firmware x4" }));
         expect(onManual).toHaveBeenCalledWith(releases[0]);
         rerender(<FirmwareSection board={board({ differ: true })} releases={releases} onInstall={vi.fn()} onManual={vi.fn()} paranoid={false} />);
         expect(screen.getByText("The halves run different firmware.")).toBeTruthy();
@@ -220,7 +220,7 @@ describe("the Firmware card (D2)", () => {
         const silent = board({ halves: [{ hand: 0, usb: false, tag: "", fwVersion: 0, answered: false }, { hand: 1, usb: true, tag: "v3", fwVersion: 3000, answered: true }] });
         render(<FirmwareSection board={silent} releases={releases} onInstall={onInstall} onManual={onManual} paranoid={false} />);
         const lead = screen.getByTestId("firmware-silent");
-        expect(lead.textContent).toBe("The left half didn't answer.Check the split cable. If the left half runs older firmware, install x4 on both halves by hand.Install by hand");
+        expect(lead.textContent).toBe("The left half didn't answer.Check the split cable. If the left half runs older firmware, install Unstable firmware x4 on both halves by hand.Install by hand");
         expect(screen.queryByRole("button", { name: /Update to/ })).toBeNull();
         fireEvent.click(within(lead).getByRole("button", { name: "Install by hand" }));
         expect(onManual).toHaveBeenCalledWith(releases[0]);
@@ -230,7 +230,7 @@ describe("the Firmware card (D2)", () => {
     it("firmware before the updater names no half it can't tell", () => {
         render(<FirmwareSection board={board({ updater: false, legacyLabel: "Svalboard QMK vLaunch2 or later", usbHand: null, halves: [] })} releases={releases} onInstall={vi.fn()} onManual={vi.fn()} paranoid={false} />);
         expect(screen.getByTestId("firmware-halves").textContent).toBe("Plugged-in halfSvalboard QMK vLaunch2 or later");
-        expect(screen.getByRole("button", { name: "Update to x4" })).toBeTruthy();
+        expect(screen.getByRole("button", { name: "Update to Unstable firmware x4" })).toBeTruthy();
     });
 
     it("Install a firmware file… takes one .uf2 for both halves; an older per-side file is refused with the steps by hand", async () => {
@@ -375,7 +375,7 @@ describe("the sheet (B1) and the dialog against the mock board", () => {
     });
 
     it("P4-31 a blank keyboard doesn't wait for the backup: Update is on while it saves", () => {
-        const plan = { board: { usb: { hand: 1 }, noChord: true }, target: "both", title: "Update to x4", toTag: "x4", checks: [], warnings: [], refusal: null, otherSilent: false } as unknown as Plan;
+        const plan = { board: { usb: { hand: 1 }, noChord: true }, target: "both", title: "Update to Unstable firmware x4", toTag: "x4", checks: [], warnings: [], refusal: null, otherSilent: false } as unknown as Plan;
         const sheet = (afterwards: "restore" | "blank") => <UpdateSheet ui={{ kind: "sheet", source: { kind: "file", files: [] }, plan, preFailure: null, backup: { state: "pending" }, afterwards, error: null }} onAfterwards={vi.fn()} onStart={vi.fn()} onCancel={vi.fn()} />;
         const { rerender } = render(sheet("restore"));
         expect(screen.getByRole("button", { name: "Update" })).toBeDisabled();
@@ -384,7 +384,7 @@ describe("the sheet (B1) and the dialog against the mock board", () => {
     });
 
     it("renders the sheet's integrity refusal with Reload and Close only", () => {
-        const plan = { board: { usb: { hand: 1 }, noChord: false }, target: "both", title: "Update to x4", toTag: "x4", checks: [], warnings: [], refusal: { id: "integrity", label: "The firmware file failed its check.", state: "refuse", detail: "Keybard won't install it. Reload Keybard and try again." }, otherSilent: false } as unknown as Plan;
+        const plan = { board: { usb: { hand: 1 }, noChord: false }, target: "both", title: "Update to Unstable firmware x4", toTag: "x4", checks: [], warnings: [], refusal: { id: "integrity", label: "The firmware file failed its check.", state: "refuse", detail: "Keybard won't install it. Reload Keybard and try again." }, otherSilent: false } as unknown as Plan;
         render(<UpdateSheet ui={{ kind: "sheet", source: { kind: "file", files: [] }, plan, preFailure: null, backup: { state: "pending" }, afterwards: "restore", error: null }} onAfterwards={vi.fn()} onStart={vi.fn()} onCancel={vi.fn()} />);
         expect(screen.getAllByText("The firmware file failed its check.")).toHaveLength(1);
         expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();

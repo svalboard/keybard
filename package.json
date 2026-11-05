@@ -36,6 +36,7 @@
         "test:e2e:touchpad-tuning": "python tests/e2e/touchpad_tuning_e2e.py",
         "test:e2e:no-guess": "python tests/e2e/no_guessed_state_e2e.py",
         "test:e2e:mouse-limits": "python tests/e2e/mouse_key_limits_e2e.py",
+        "test:e2e:about-versions": "python tests/e2e/about_versions_e2e.py",
         "build:sval-preview": "tsc && vite build --mode sval-preview",
         "build:svalboard": "tsc && vite build --mode svalboard",
         "build:next": "tsc && vite build --mode next",

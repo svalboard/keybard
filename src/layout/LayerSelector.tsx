@@ -27,6 +27,7 @@ import { FC, useState, useEffect, useRef } from "react";
 import { usePanels } from "@/contexts/PanelsContext";
 import { useLayoutSettings } from "@/contexts/LayoutSettingsContext";
 import { describeFirmware } from "@/constants/firmware";
+import { runsFirmware } from "@/constants/firmware-releases";
 
 
 interface LayerSelectorProps {
@@ -77,7 +78,7 @@ const LayerSelector: FC<LayerSelectorProps> = ({
 }) => {
     const { keyboard, isConnected, connect, resetToOriginal, activeLayerIndex, loadedFrom } = useKeyboard();
     const firmware = isConnected && keyboard ? describeFirmware(keyboard) : null;
-    const editingTarget = `${isConnected ? "Editing keyboard" : "Offline draft"}: ${loadedFrom || keyboard?.name || "Layout"}${isConnected ? (firmware ? `. Firmware: ${firmware}` : "") : ". Export to keep edits."}`;
+    const editingTarget = `${isConnected ? "Editing keyboard" : "Offline draft"}: ${loadedFrom || keyboard?.name || "Layout"}${isConnected ? (firmware ? `. ${runsFirmware(firmware)}` : "") : ". Export to keep edits."}`;
     const { undo, undoLabel, commit, getPendingCount, clearAll, isSaving, error: saveError, setInstant, isInstant } = useChanges();
     const { updateSetting } = useSettings();
     const { is3DMode, setIs3DMode, isThumb3DOffsetActive, setIsThumb3DOffsetActive } = useLayoutSettings();

@@ -141,7 +141,7 @@ describe('Settings > Backups', () => {
         expect(rows[0]).toHaveTextContent('Saved by hand');
         // Named by why it was saved; the firmware it was saved from is a muted detail.
         expect(rows[1]).toHaveTextContent('Saved before a firmware update');
-        expect(rows[1]).toHaveTextContent('saved from v3 firmware');
+        expect(rows[1]).toHaveTextContent('saved from Stable firmware v3');
         expect(rows[1]).not.toHaveTextContent('x4');
         expect(rows[0]).toHaveAttribute('data-pinned', 'true');
         expect(rows[2]).toHaveTextContent('Saved after a change');

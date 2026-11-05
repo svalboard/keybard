@@ -17,10 +17,11 @@ import { UpdateSheet } from "./UpdateSheet";
 import type { UpdateUi } from "./useFirmwareUpdate";
 import type { SideWrite } from "@/services/side-decision";
 import { SideFix, assessmentFromAsk } from "./SideFix";
+import { firmwareName } from "@/constants/firmware-releases";
 
 /** The Done screen's title: what is on the keyboard now. */
 export function resultTitle(s: FlowState): string {
-    const what = s.title.startsWith("Install custom") ? "The custom firmware" : s.toTag;
+    const what = s.title.startsWith("Install custom") ? "The custom firmware" : firmwareName(s.toTag);
     if (s.target !== "both") return `${what} is installed on the ${handName(s.target)} half`;
     return `${what} is installed`;
 }
@@ -128,7 +129,7 @@ export function UpdateDialog(p: UpdateDialogProps) {
                 )}
                 {ui.kind === "flow" && ui.state.phase === "running" && ui.state.sideAsk && (
                     <div className="flex flex-col gap-4" data-testid="flow-sides">
-                        <FwTitle sub={`${ui.state.toTag} is installed on both halves.`}>{ui.state.sideAsk.reason === "confirm" ? "Check which half is which" : "Set which half is which"}</FwTitle>
+                        <FwTitle sub={`${firmwareName(ui.state.toTag)} is installed on both halves.`}>{ui.state.sideAsk.reason === "confirm" ? "Check which half is which" : "Set which half is which"}</FwTitle>
                         <SideFix
                             bare
                             mode={ui.state.sideAsk.reason === "confirm" ? "confirm" : "fix"}

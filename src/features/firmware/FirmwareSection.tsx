@@ -18,6 +18,7 @@ import type { Hand } from "@/services/updater/protocol";
 import type { BoardSummary } from "./board-summary";
 import type { SideFixControl } from "./FirmwareUpdateProvider";
 import { SideFix, sideProblem } from "./SideFix";
+import { firmwareName } from "@/constants/firmware-releases";
 
 export type FirmwarePick = { kind: "release"; release: FirmwareReleasePin } | { kind: "files"; files: SvupFile[] };
 
@@ -160,7 +161,7 @@ export function FirmwareSection({ board, releases, onInstall, onManual, onConnec
             <div className="flex flex-wrap items-center justify-between gap-3" data-testid="firmware-silent">
                 <div className="flex flex-col">
                     <p className="text-sm font-semibold text-kb-warn-ink">The {name} half didn't answer.</p>
-                    <p className="text-sm text-muted-foreground">Check the split cable. If the {name} half runs older firmware, install {newest?.tag ?? "the newest firmware"} on both halves by hand.</p>
+                    <p className="text-sm text-muted-foreground">Check the split cable. If the {name} half runs older firmware, install {newest ? firmwareName(newest.tag) : "the newest firmware"} on both halves by hand.</p>
                 </div>
                 <Button variant="kb-primary" onClick={() => onManual(newest)}>Install by hand</Button>
             </div>
@@ -169,10 +170,10 @@ export function FirmwareSection({ board, releases, onInstall, onManual, onConnec
         lead = (
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-col">
-                    <span className="text-sm font-semibold">{newest.tag} is available</span>
-                    <span className="text-sm"><NotesLink release={newest} label={`What's new in ${newest.tag}`} /></span>
+                    <span className="text-sm font-semibold">{firmwareName(newest.tag)} is available</span>
+                    <span className="text-sm"><NotesLink release={newest} label={`What's new in ${firmwareName(newest.tag)}`} /></span>
                 </div>
-                <Button variant="kb-primary" onClick={() => install(newest)}>Update to {newest.tag}</Button>
+                <Button variant="kb-primary" onClick={() => install(newest)}>Update to {firmwareName(newest.tag)}</Button>
             </div>
         );
     } else if (!updater) {
@@ -192,7 +193,7 @@ export function FirmwareSection({ board, releases, onInstall, onManual, onConnec
     } else if (newest) {
         lead = (
             <p className="text-sm">
-                Your keyboard has the newest firmware. {installed && <NotesLink release={installed} label={`What's new in ${installed.tag}`} />}
+                Your keyboard has the newest firmware. {installed && <NotesLink release={installed} label={`What's new in ${firmwareName(installed.tag)}`} />}
             </p>
         );
     } else if (paranoid) {
@@ -221,14 +222,14 @@ export function FirmwareSection({ board, releases, onInstall, onManual, onConnec
                             return [
                                 <dt key={`t${h.hand}`}>{HALF(h.hand)}</dt>,
                                 <dd key={`d${h.hand}`} data-half={h.hand} className={stale || !h.answered ? "text-kb-warn-ink" : ""}>
-                                    {h.answered ? <span className="font-mono">{h.tag}</span> : "didn't answer"}
+                                    {h.answered ? <span>{firmwareName(h.tag)}</span> : "didn't answer"}
                                     {h.usb && <span className="text-muted-foreground"> · plugged in</span>}
                                 </dd>,
                             ];
                         }) : [
                             <dt key="t">{board.usbHand === null ? "Plugged-in half" : HALF(board.usbHand)}</dt>,
                             <dd key="d" data-half={board.usbHand ?? undefined}>
-                                <span className="font-mono">{board.legacyLabel ?? "older firmware"}</span>
+                                <span>{board.legacyLabel ? firmwareName(board.legacyLabel) : "older firmware"}</span>
                                 {board.usbHand !== null && <span className="text-muted-foreground"> · plugged in</span>}
                             </dd>,
                         ]}
@@ -249,7 +250,7 @@ export function FirmwareSection({ board, releases, onInstall, onManual, onConnec
                         <ul className="mt-2 flex flex-col gap-2 pl-5 text-sm" data-testid="firmware-more">
                             {others.map((r) => (
                                 <li key={r.tag} className="flex flex-wrap items-baseline gap-x-2">
-                                    <button type="button" className={linkButton} onClick={() => install(r)}>{r === installed ? `Reinstall ${r.tag}` : `Install ${r.tag}`}</button>
+                                    <button type="button" className={linkButton} onClick={() => install(r)}>{r === installed ? `Reinstall ${firmwareName(r.tag)}` : `Install ${firmwareName(r.tag)}`}</button>
                                     {r === installed && <span className="text-muted-foreground">· installed</span>}
                                     {r.notesUrl && !paranoid && <span className="text-muted-foreground">· <NotesLink release={r} label="What's new" /></span>}
                                 </li>

@@ -30,6 +30,7 @@ import {
 } from "../side-decision";
 import type { SideHost } from "../side-host";
 import { DisconnectedError, ReplyTimeoutError, type Clock, type UpdaterTransport } from "./transport";
+import { firmwareName } from "@/constants/firmware-releases";
 
 /** The layout choice before an install: Keep my layout, Reset to the default layout, Wipe to a blank board. */
 export type Afterwards = "restore" | "defaults" | "blank";
@@ -694,7 +695,7 @@ export class UpdateFlow {
             // Stop before the half with USB: it keeps its old release and keeps working, and
             // the halves-differ guidance says what to do next (Finish update).
             const u = handName(usbHand);
-            throw new Stop({ ...this.halvesDiffer(), detail: `The ${handName(o)} half didn't answer after its install, so Keybard stopped before the ${u} half. The ${u} half still runs ${this.state.fromTag} and works.` });
+            throw new Stop({ ...this.halvesDiffer(), detail: `The ${handName(o)} half didn't answer after its install, so Keybard stopped before the ${u} half. The ${u} half still runs ${firmwareName(this.state.fromTag)} and works.` });
         }
         if (!pair) {
             if (!answered) throw new Stop({ id: "F11", hand: o });

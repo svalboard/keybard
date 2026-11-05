@@ -161,8 +161,8 @@ def flow_firmware_has_no_backups(browser, url):
 def flow_install_backs_up(browser, url):
     context, page, errors = open_page(browser, url, "demo&fwfake=1&panel=firmware&speed=4")
     section = page.get_by_test_id("firmware-section")
-    expect(section.get_by_text("x4 is available")).to_be_visible(timeout=30000)
-    section.get_by_role("button", name="Update to x4").click()
+    expect(section.get_by_text("Unstable firmware x4 is available")).to_be_visible(timeout=30000)
+    section.get_by_role("button", name="Update to Unstable firmware x4").click()
     sheet = page.get_by_test_id("update-sheet")
     expect(sheet.get_by_text("Saved to Downloads just now, before the update, as")).to_be_visible(timeout=20000)
     expect(sheet.get_by_text(".svil")).to_be_visible()

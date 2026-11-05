@@ -3,6 +3,7 @@ import { FirmwareSection } from "@/features/firmware/FirmwareSection";
 import { useFirmwareUpdates } from "@/features/firmware/FirmwareUpdateProvider";
 import { describeFirmware } from "@/constants/firmware";
 import { useKeyboard } from "@/contexts/KeyboardContext";
+import { firmwareName } from "@/constants/firmware-releases";
 
 /**
  * Settings > Firmware: what the board runs, and the way into an install (the sheet, the
@@ -31,7 +32,8 @@ const FirmwareRow: React.FC = () => {
 
     if (!updates) {
         // Outside the editor's provider (never in the app): what the board runs, no install.
-        const running = keyboard && isConnected ? describeFirmware(keyboard) : null;
+        const label = keyboard && isConnected ? describeFirmware(keyboard) : null;
+        const running = label ? firmwareName(label) : null;
         return <p className="px-3 py-2.5 text-sm text-muted-foreground">{running ?? "Connect a keyboard to see its firmware."}</p>;
     }
 

@@ -36,7 +36,7 @@ describe("Settings > Firmware", () => {
         render(<FirmwareRow />);
         expect(screen.getByTestId("firmware-section")).toBeTruthy();
         expect(screen.queryByRole("heading", { name: "Firmware" })).toBeNull(); // Settings titles the section
-        expect(screen.getByTestId("firmware-halves").textContent).toBe("Left halfv3Right halfv3 · plugged in");
+        expect(screen.getByTestId("firmware-halves").textContent).toBe("Left halfStable firmware v3Right halfStable firmware v3 · plugged in");
         expect(screen.getByRole("button", { name: "Other versions and files" })).toBeTruthy();
     });
 

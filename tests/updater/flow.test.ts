@@ -230,7 +230,7 @@ describe("the sheet's checks", () => {
     it("warns about an unknown file, a developer build and an older release, and reads the right title", async () => {
         const { board } = fakeSetup({ clock, running: x32 });
         const older = await planInstall(new UpdaterClient(board), { kind: "file", files: [v3.files[L]] }, { clock, releases: [pin(v3), pin(x32)] }) as Plan;
-        expect(older.title).toBe("Install v3");
+        expect(older.title).toBe("Install Stable firmware v3");
         expect(older.warnings.map((w) => w.id)).toContain("older");
         const devPlan = await planInstall(new UpdaterClient(fakeSetup({ clock, running: v3 }).board), { kind: "file", files: [dev.files[L]] }, { clock, releases: [pin(v3), pin(x32)] }) as Plan;
         expect(devPlan.title).toBe("Install custom firmware");
@@ -240,9 +240,9 @@ describe("the sheet's checks", () => {
 
     it("titles a reinstall and an update", async () => {
         const { plan: re } = await plan({ release: v3 });
-        expect((re as Plan).title).toBe("Reinstall v3");
+        expect((re as Plan).title).toBe("Reinstall Stable firmware v3");
         const { plan: up } = await plan();
-        expect((up as Plan).title).toBe("Update to x4");
+        expect((up as Plan).title).toBe("Update to Unstable firmware x4");
         expect((up as Plan).target).toBe("both");
     });
 

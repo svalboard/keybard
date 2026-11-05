@@ -13,6 +13,7 @@ import type { SvupFile } from "./svup";
 import { ReplyTimeoutError, type Clock } from "./transport";
 import type { SideHost } from "../side-host";
 import { assessSides, knownSidesFrom, sidesSettling, sidesSound, type KnownSides, type SideAssessment } from "../side-decision";
+import { firmwareName } from "@/constants/firmware-releases";
 
 /**
  * How long a read waits for the other half after the half with USB answers: the split link
@@ -181,9 +182,9 @@ function kindFor(board: BoardState, file: SvupFile, pinned: boolean): InstallKin
 
 export function titleFor(kind: InstallKind, tag: string): string {
     switch (kind) {
-        case "update": return `Update to ${tag}`;
-        case "reinstall": return `Reinstall ${tag}`;
-        case "install": return `Install ${tag}`;
+        case "update": return `Update to ${firmwareName(tag)}`;
+        case "reinstall": return `Reinstall ${firmwareName(tag)}`;
+        case "install": return `Install ${firmwareName(tag)}`;
         default: return "Install custom firmware";
     }
 }
@@ -290,7 +291,7 @@ export async function planInstall(client: UpdaterClient, source: InstallSource, 
     }
     const lead = files[target === "both" ? usbHand : target]!;
     if (lead && lead.manifest.fwVersion < board.usb.fwVersion) {
-        warnings.push({ id: "older", label: `${lead.manifest.tag || "This file"} is older than ${board.usbTag || "what's installed"}.`, state: "warn", detail: `Parts of your layout added since ${lead.manifest.tag || "it"} won't come back.` });
+        warnings.push({ id: "older", label: `${lead.manifest.tag ? firmwareName(lead.manifest.tag) : "This file"} is older than ${board.usbTag ? firmwareName(board.usbTag) : "what's installed"}.`, state: "warn", detail: `Parts of your layout added since ${lead.manifest.tag ? firmwareName(lead.manifest.tag) : "it"} won't come back.` });
     }
     if (source.kind === "release" && o.maxSvalProtocol !== undefined && (source.release.svalProtocol ?? 0) > o.maxSvalProtocol) {
         warnings.push({ id: "sval-protocol", label: "This Keybard may not be able to edit this firmware.", state: "warn", detail: "You can still install it. Reload Keybard afterward to get a newer one." });

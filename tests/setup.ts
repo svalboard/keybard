@@ -98,3 +98,19 @@ declare global {
 }
 
 export {};
+
+// The About section and the unstable banner read the public sites'
+// version.json (src/utils/site-versions.ts). Tests never reach those sites:
+// unless a test stubs fetch itself, the read fails and no version is shown.
+{
+  const realFetch = globalThis.fetch;
+  if (realFetch) {
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (/^https:\/\/(next\.)?keybard\.svalboard\.com\//.test(url)) {
+        return Promise.reject(new TypeError('No network in tests'));
+      }
+      return realFetch(input, init);
+    }) as typeof fetch;
+  }
+}

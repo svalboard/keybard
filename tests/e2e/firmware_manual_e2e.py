@@ -6,7 +6,7 @@ Run with `npm run test:e2e:firmware`.
 
   1. Update from Keybard: Start (one sentence, the layout choice, Update), then
      "Confirm on your keyboard" only while the board waits for the two keys, then
-     Updating with one bar, then Done ("x4 is installed. Your layout is back.").
+     Updating with one bar, then Done ("Unstable firmware x4 is installed. Your layout is back.").
   2. A warning (an older release): a sentence with what to do, and Update anyway.
   3. A refusal (a file that misses its pin): the sentence, Reload and Close, no Update.
   4. Install from a file: Install a firmware file... takes the one .uf2 and installs
@@ -24,7 +24,8 @@ Run with `npm run test:e2e:firmware`.
      firmware picked shown once: That's right or Swap; a half that came back
      unknown); after an install by hand. The answer is the confirmation: one click.
   9. One line, at phone width (430 px) and desktop, light and dark: no sideways
-     scroll; titles, choices and buttons each on one line; one title per dialog,
+     scroll; titles, choices and buttons each on one line (two for a line naming a
+     release, such as Unstable firmware x3.1.3); one title per dialog,
      and it names the dialog. Plain words only.
  10. The reset notice after new firmware: "Your layout was reset", a Firmware line (what
      the halves run now) and a Layout line (the backup, by when and why it was saved,
@@ -148,7 +149,10 @@ def main() -> int:
         wide = page.evaluate(WIDE_JS)
         check(not any(wide.values()), f"{label}: no sideways scroll {wide}")
         rows = page.evaluate(ONE_LINE_JS, "[role=dialog] [data-testid=layout-choice] label, [role=dialog] h2, [role=dialog] button, [data-testid=firmware-section] button, [data-testid=firmware-halves] dd")
-        check(rows["count"] > 0 and not rows["wrapped"], f"{label}: each of {rows['count']} titles, choices and buttons on one line {rows['wrapped']}")
+        # A full release name ("Unstable firmware x3.1.3") may take a second line on a phone, no more.
+        named = re.compile(r"(Stable|Unstable) firmware [vx]\d")
+        wrapped = [r for r in rows["wrapped"] if not (named.search(r["text"]) and r["lines"] <= 2)]
+        check(rows["count"] > 0 and not wrapped, f"{label}: each of {rows['count']} titles, choices and buttons on one line {wrapped}")
         t = page.evaluate(TITLES_JS)
         if t:
             check(len(t["heads"]) == 1 and t["label"] == t["heads"][0] and not t["hidden"], f"{label}: one title, and it names the dialog {t}")
@@ -178,8 +182,8 @@ def main() -> int:
 
     def update_flow(page, label: str, shots: bool):
         section = page.get_by_test_id("firmware-section")
-        expect(section.get_by_text("x4 is available")).to_be_visible(timeout=15000)
-        check(section.get_by_role("link", name="What's new in x4 ↗").count() == 1, f"{label}: What's new links the release notes")
+        expect(section.get_by_text("Unstable firmware x4 is available")).to_be_visible(timeout=15000)
+        check(section.get_by_role("link", name="What's new in Unstable firmware x4 ↗").count() == 1, f"{label}: What's new links the release notes")
         check(section.get_by_text("· plugged in").count() == 1, f"{label}: the plugged-in half is named")
         layout(page, f"{label} card")
         if shots:
@@ -188,7 +192,7 @@ def main() -> int:
             check(section.get_by_role("button", name="Install a firmware file…").count() == 1, f"{label}: Install a firmware file…")
             shot(page, "02-card-other-versions")
             section.get_by_role("button", name="Other versions and files").click()
-        section.get_by_role("button", name="Update to x4").click()
+        section.get_by_role("button", name="Update to Unstable firmware x4").click()
         sheet = page.get_by_test_id("update-sheet")
         expect(sheet.get_by_text("Saved to Downloads")).to_be_visible(timeout=20000)
         check(sheet.get_by_text("Keybard updates both halves through the cable to your computer. It takes about 2 minutes.").count() == 1, f"{label}: one sentence")
@@ -217,7 +221,7 @@ def main() -> int:
             page.wait_for_timeout(1500)
             shot(page, "05-update-updating")
         result = wait_result(page, label)
-        check(result.get_by_role("heading", name="x4 is installed").count() == 1, f"{label}: x4 is installed")
+        check(result.get_by_role("heading", name="Unstable firmware x4 is installed").count() == 1, f"{label}: x4 is installed")
         check(result.get_by_text("Your layout is back on the keyboard.").count() == 1, f"{label}: layout is back")
         layout(page, f"{label} done")
         if shots:
@@ -227,7 +231,7 @@ def main() -> int:
         section = page.get_by_test_id("firmware-section")
         expect(section.get_by_text("x3.1.3")).to_be_visible(timeout=15000)
         check(section.get_by_text("vNext1").count() == 0, f"{label}: no vNext1 label")
-        section.get_by_role("button", name="Update to x4").click()
+        section.get_by_role("button", name="Update to Unstable firmware x4").click()
         dialog = page.get_by_test_id("manual-install")
         expect(dialog.get_by_text("Kip-layout-2026-10-15-0626.svil")).to_be_visible(timeout=15000)
         return dialog
@@ -263,23 +267,23 @@ def main() -> int:
             section = page.get_by_test_id("firmware-section")
             expect(section.get_by_text("Your keyboard has the newest firmware.")).to_be_visible(timeout=15000)
             section.get_by_role("button", name="Other versions and files").click()
-            section.get_by_role("button", name="Install v3").click()
+            section.get_by_role("button", name="Install Stable firmware v3").click()
             sheet = page.get_by_test_id("update-sheet")
-            expect(sheet.get_by_text("v3 is older than x4.")).to_be_visible(timeout=20000)
-            check(sheet.get_by_text("Parts of your layout added since v3 won't come back.").count() == 1, f"{vp_name} warning: says what it means")
+            expect(sheet.get_by_text("Stable firmware v3 is older than Unstable firmware x4.")).to_be_visible(timeout=20000)
+            check(sheet.get_by_text("Parts of your layout added since Stable firmware v3 won't come back.").count() == 1, f"{vp_name} warning: says what it means")
             expect(sheet.get_by_role("button", name="Update anyway")).to_be_enabled(timeout=20000)
             layout(page, f"{vp_name} warning")
             shot(page, "07-update-warning")
             sheet.get_by_role("button", name="Update anyway").click()
             expect(page.get_by_test_id("update-result")).to_be_visible(timeout=60000)
-            check(page.get_by_role("heading", name="v3 is installed").count() == 1, f"{vp_name} warning: v3 installed")
+            check(page.get_by_role("heading", name="Stable firmware v3 is installed").count() == 1, f"{vp_name} warning: v3 installed")
             check(not errors, f"{vp_name} warning: no page errors {errors}")
             context.close()
 
         # 3. A refusal: the carried file misses its pin. Reload and Close, no Update.
         for vp_name, vp in [("phone", PHONE), ("desktop", DESKTOP)]:
             context, page, errors, dialogs = open_firmware(browser, url, f"{BASE}&badfile=1&speed=20", "light", vp)
-            page.get_by_test_id("firmware-section").get_by_role("button", name="Update to x4").click()
+            page.get_by_test_id("firmware-section").get_by_role("button", name="Update to Unstable firmware x4").click()
             sheet = page.get_by_test_id("update-sheet")
             expect(sheet.get_by_text("The firmware file failed its check.")).to_be_visible(timeout=20000)
             check(sheet.get_by_role("button", name="Reload").count() == 1 and sheet.get_by_role("button", name="Close").count() == 1, f"{vp_name} refusal: Reload and Close")
@@ -297,14 +301,14 @@ def main() -> int:
             context, page, errors, dialogs = open_firmware(browser, url, f"{BASE}&pick=x4&speed=20", theme, PHONE)
             sheet = page.get_by_test_id("update-sheet")
             expect(sheet.get_by_text("Saved to Downloads")).to_be_visible(timeout=20000)
-            check(page.get_by_role("heading", name="Update to x4").count() == 1, f"{label}: the file is x4, matched to its pin")
+            check(page.get_by_role("heading", name="Update to Unstable firmware x4").count() == 1, f"{label}: the file is x4, matched to its pin")
             check(sheet.get_by_text("Keybard updates both halves through the cable to your computer. It takes about 2 minutes.").count() == 1, f"{label}: both halves from one file")
             layout(page, label)
             if theme == "light":
                 shot(page, "13-from-file-start")
             sheet.get_by_role("button", name="Update", exact=True).click()
             result = wait_result(page, label)
-            check(result.get_by_role("heading", name="x4 is installed").count() == 1, f"{label}: x4 is installed on both halves")
+            check(result.get_by_role("heading", name="Unstable firmware x4 is installed").count() == 1, f"{label}: x4 is installed on both halves")
             page.get_by_role("button", name="Done").click()
             expect(page.get_by_test_id("firmware-halves")).to_contain_text("x4")
             check(page.get_by_test_id("firmware-halves").inner_text().count("x4") == 2, f"{label}: both halves run x4")
@@ -358,7 +362,7 @@ def main() -> int:
                 if vp is PHONE and theme == "light":
                     shot(page, "09-by-hand-instructions")
                 dialog.get_by_role("button", name="Connect keyboard").click()
-                expect(dialog.get_by_role("heading", name="x4 is installed")).to_be_visible(timeout=20000)
+                expect(dialog.get_by_role("heading", name="Unstable firmware x4 is installed")).to_be_visible(timeout=20000)
                 check(dialog.get_by_text("Your layout is back on the keyboard. From now on, updates install from Keybard.").count() == 1, f"{label}: layout back")
                 layout(page, f"{label} done")
                 if vp is PHONE and theme == "light":
@@ -379,12 +383,12 @@ def main() -> int:
                 lead = page.get_by_test_id("firmware-silent")
                 expect(lead).to_be_visible(timeout=20000)
                 check(lead.get_by_text("The left half didn't answer.").count() == 1, f"{label}: names the silent half")
-                check(lead.get_by_text("Check the split cable. If the left half runs older firmware, install x4 on both halves by hand.").count() == 1, f"{label}: both halves by hand")
+                check(lead.get_by_text("Check the split cable. If the left half runs older firmware, install Unstable firmware x4 on both halves by hand.").count() == 1, f"{label}: both halves by hand")
                 check(page.get_by_role("button", name=re.compile("^Update to")).count() == 0, f"{label}: no one-half update offered")
                 check(page.evaluate(WIDE_JS)["page"] is False, f"{label}: no sideways scroll")
                 lead.get_by_role("button", name="Install by hand").click()
                 dialog = page.get_by_test_id("manual-install")
-                expect(dialog.get_by_role("heading", name="Install x4 by hand")).to_be_visible(timeout=15000)
+                expect(dialog.get_by_role("heading", name="Install Unstable firmware x4 by hand")).to_be_visible(timeout=15000)
                 check(len(dialog.get_by_test_id("manual-steps").locator("li").all_inner_texts()) == 5, f"{label}: steps for both halves")
                 layout(page, label)
                 check(not errors, f"{label}: no page errors {errors}")
@@ -396,14 +400,14 @@ def main() -> int:
             context, page, errors, dialogs = open_firmware(browser, url, f"{PROTO3}&byhand=right", "light", vp)
             dialog = manual_open(page, label)
             dialog.get_by_role("button", name="Connect keyboard").click()
-            expect(dialog.get_by_role("heading", name="The left half still runs x3.1.3")).to_be_visible(timeout=20000)
-            check(dialog.get_by_text("The right half has x4. Install the file on the left half, then connect again.").count() == 1, f"{label}: names both halves")
+            expect(dialog.get_by_role("heading", name="The left half still runs Unstable firmware x3.1.3")).to_be_visible(timeout=20000)
+            check(dialog.get_by_text("The right half has Unstable firmware x4. Install the file on the left half, then connect again.").count() == 1, f"{label}: names both halves")
             check(dialog.locator("[data-file]").count() == 1, f"{label}: the one file")
             check("left half's U port" in dialog.inner_text() and "right half's U port" not in dialog.inner_text(), f"{label}: only the left half's steps")
             layout(page, f"{label}")
             shot(page, "10-by-hand-one-half")
             dialog.get_by_role("button", name="Connect again").click()
-            expect(dialog.get_by_role("heading", name="x4 is installed")).to_be_visible(timeout=20000)
+            expect(dialog.get_by_role("heading", name="Unstable firmware x4 is installed")).to_be_visible(timeout=20000)
             check(not errors, f"{label}: no page errors {errors}")
             context.close()
 
@@ -412,8 +416,8 @@ def main() -> int:
         dialog = manual_open(page, "neither")
         dialog.get_by_role("button", name="Connect keyboard").click()
         expect(dialog.get_by_test_id("manual-still")).to_be_visible(timeout=20000)
-        check(dialog.get_by_role("heading", name="Install x4 by hand").count() == 1, "neither: the instructions stay")
-        check(dialog.get_by_test_id("manual-still").inner_text() == "The right half still runs x3.1.3. Install the file on it, then connect again.", "neither: one line")
+        check(dialog.get_by_role("heading", name="Install Unstable firmware x4 by hand").count() == 1, "neither: the instructions stay")
+        check(dialog.get_by_test_id("manual-still").inner_text() == "The right half still runs Unstable firmware x3.1.3. Install the file on it, then connect again.", "neither: one line")
         shot(page, "11-by-hand-neither")
         context.close()
 
@@ -494,7 +498,7 @@ def main() -> int:
                 act(box, page)
                 result = page.get_by_test_id("update-result")
                 expect(result).to_be_visible(timeout=120000)
-                check(result.get_by_role("heading", name="x4 is installed").count() == 1, f"{label}: x4 is installed")
+                check(result.get_by_role("heading", name="Unstable firmware x4 is installed").count() == 1, f"{label}: x4 is installed")
                 if line:
                     check(line in result.inner_text(), f"{label}: {line}")
                 else:
@@ -524,7 +528,7 @@ def main() -> int:
         layout(page, "by hand sides")
         shot(page, "21-sides-after-by-hand")
         answer_sides(dialog, "right", "by hand sides")
-        expect(dialog.get_by_role("heading", name="x4 is installed")).to_be_visible(timeout=30000)
+        expect(dialog.get_by_role("heading", name="Unstable firmware x4 is installed")).to_be_visible(timeout=30000)
         check(dialog.get_by_text("Your layout is back on the keyboard. From now on, updates install from Keybard.").count() == 1, "by hand sides: layout back")
         check(not errors, f"by hand sides: no page errors {errors}")
         context.close()
@@ -649,23 +653,23 @@ def main() -> int:
                     break
                 page.wait_for_timeout(500)
             check(failed.count() == 0, f"{label}: no failure ({failed.first.get_attribute('data-failure') if failed.count() else ''})")
-            check(result.count() == 1 and result.get_by_role("heading", name="x4 is installed").count() == 1, f"{label}: x4 is installed")
+            check(result.count() == 1 and result.get_by_role("heading", name="Unstable firmware x4 is installed").count() == 1, f"{label}: x4 is installed")
             check(not errors, f"{label}: no page errors {errors}")
             context.close()
 
-        # Reinstall from Other versions: Reinstall x4 on a board on x4.
+        # Reinstall from Other versions: Reinstall Unstable firmware x4 on a board on x4.
         context, page, errors, dialogs = open_firmware(browser, url, f"{BASE}&running=x4&speed=4", "light", DESKTOP)
         section = page.get_by_test_id("firmware-section")
         expect(section.get_by_text("Your keyboard has the newest firmware.")).to_be_visible(timeout=20000)
         section.get_by_role("button", name="Other versions and files").click()
-        section.get_by_role("button", name="Reinstall x4").click()
+        section.get_by_role("button", name="Reinstall Unstable firmware x4").click()
         sheet = page.get_by_test_id("update-sheet")
         primary = sheet.locator("[data-primary]")
         expect(primary).to_be_enabled(timeout=20000)
         primary.click()
         result = page.get_by_test_id("update-result")
         expect(result).to_be_visible(timeout=120000)
-        check(result.get_by_role("heading", name="x4 is installed").count() == 1, "Reinstall x4: x4 is installed")
+        check(result.get_by_role("heading", name="Unstable firmware x4 is installed").count() == 1, "Reinstall x4: x4 is installed")
         check(page.locator("[data-failure]").count() == 0, "Reinstall x4: no failure")
         context.close()
 
