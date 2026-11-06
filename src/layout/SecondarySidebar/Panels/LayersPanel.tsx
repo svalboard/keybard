@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { svalService } from "@/services/sval.service";
 import { KeyContent } from "@/types/keyboard.types";
 import { CODEMAP } from "@/constants/keygen";
+import { getSelectedKeymapKeycode } from "@/hooks/useModifierSide";
 import { hoverBackgroundClasses, hoverBorderClasses, hoverHeaderClasses } from "@/utils/colors";
 import { getKeyContents } from "@/utils/keys";
 import DescriptionBlock from "@/layout/SecondarySidebar/components/DescriptionBlock";
@@ -65,12 +66,7 @@ const LayersPanel = ({ isPicker }: Props) => {
 
     // Compute the base keycode string for use in LT previews
     const getBaseKeycode = (): string => {
-        if (!keyboard?.keymap || !selectedTarget || selectedTarget.type !== "keyboard") return "KC_NO";
-        const { layer, row, col } = selectedTarget;
-        if (layer === undefined || row === undefined || col === undefined) return "KC_NO";
-        const matrixCols = keyboard.cols || 16; // Use actual columns or fallback
-        const matrixPos = row * matrixCols + col;
-        const numericKeycode = keyboard.keymap[layer]?.[matrixPos];
+        const numericKeycode = getSelectedKeymapKeycode(keyboard, selectedTarget);
         if (numericKeycode === undefined) return "KC_NO";
 
         let baseCode = numericKeycode;
