@@ -123,7 +123,8 @@ describe("the running screens (5.1)", () => {
         render(<ConfirmView state={fs("approve", { approveAt: 0, usbHand: 0 })} now={0} />);
         const diagram = screen.getByTestId("chord-diagram");
         // The lit keys carry no text at all: no legend from a keymap, no default layout's letters.
-        expect(diagram.textContent).toBe("");
+        // Only the half names ("Left · USB", "Right") label the halves.
+        expect(diagram.textContent?.replace(/Left|Right|USB|[^A-Za-z]/g, "")).toBe("");
         expect([...diagram.querySelectorAll("[data-chord-key]")].map((k) => k.getAttribute("data-chord-key"))).toEqual(["middle south", "index south"]);
         expect(screen.getByTestId("update-confirm").textContent).toContain("On the left half, press the south keys of your index and middle fingers");
         expect(screen.getByTestId("update-confirm").textContent).not.toMatch(/[MVC,] and/);

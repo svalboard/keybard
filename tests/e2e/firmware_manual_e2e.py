@@ -202,7 +202,9 @@ def main() -> int:
         confirm = page.get_by_test_id("update-confirm")
         expect(confirm).to_be_visible(timeout=20000)
         check("press the south keys of your index and middle fingers, lit above, together and hold them for a second" in confirm.inner_text(), f"{label}: says what to press and how, by key position")
-        check(confirm.get_by_test_id("chord-diagram").inner_text().strip() == "", f"{label}: the lit keys carry no letters")
+        diagram = confirm.get_by_test_id("chord-diagram")
+        check(diagram.inner_text().replace("USB", "").replace("Left", "").replace("Right", "").replace("·", "").strip() == "", f"{label}: the lit keys carry no letters")
+        check(diagram.locator('[data-half="right"] [data-chord-key]').count() == 2 and diagram.locator('[data-half="left"] [data-chord-key]').count() == 0, f"{label}: the keys are lit on the right half")
         check("On the right half" in confirm.inner_text(), f"{label}: says which half")
         check(confirm.get_by_text("Firmware only changes when someone at the keyboard says so.").count() == 1, f"{label}: says why")
         if shots:

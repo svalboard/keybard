@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 
 import type { FlowState, Step } from "@/services/updater/flow";
 import { handName, otherHand } from "@/services/updater/protocol";
-import { CHORD_KEYS_PHRASE, ChordDiagram } from "./ChordDiagram";
+import { CHORD_KEYS_PHRASE, ChordDiagram, chordHalfPhrase } from "./ChordDiagram";
 import { FwTitle, Spinner } from "./parts";
 
 /** Seconds the board waits for the key press (the flow allows a little more for the round trips). */
@@ -28,7 +28,7 @@ export function ConfirmView({ state, now }: { state: FlowState; now: number }) {
             <FwTitle sub="Firmware only changes when someone at the keyboard says so.">Confirm on your keyboard</FwTitle>
             <ChordDiagram hand={usb} />
             <p className="text-sm">
-                On the {handName(usb)} half, press {CHORD_KEYS_PHRASE}, lit above, together and hold them for a second.
+                On {chordHalfPhrase(usb)}, press {CHORD_KEYS_PHRASE}, lit above, together and hold them for a second.
                 The light on that half is blinking blue now, and flashes white when it's done.
             </p>
             <p className="text-sm text-muted-foreground tabular-nums" aria-live="off">{left === 1 ? "1 second left" : `${left} seconds left`}</p>
