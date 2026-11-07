@@ -23,6 +23,8 @@ EFFECTS = {'Off': dict(effect='Off'), 'Flash': dict(effect='Quick flash', durati
 DEFAULTS = dict(layoutId='us', appearance=dict(PRESETS['Outline only']),
     effect='Short fade', duration=150, scale=100, hands='Both', highlightPressed=True, manualDefault=1,
     capitalAlphas=False, adaptiveContrast=False,
+    # Keybard's Shifted Key Symbols and AltGr Symbols settings (same defaults); Keybard sends them with layoutId.
+    shiftedLegends=True, altgrLegends=False,
     # Pointing devices in the overlay: drawn devices off, the sniper and boost pills on.
     showPointing=False, pointingPills=True)
 # Settings that earlier test builds saved and this Host no longer has; dropped when read.
@@ -96,7 +98,7 @@ def validate_config(value):
         elif key == 'layoutId':
             if not isinstance(val, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,32}', val): raise ValueError('Invalid keyboard language')
             result[key] = val
-        elif key in ('highlightPressed', 'capitalAlphas', 'adaptiveContrast', 'showPointing', 'pointingPills'):
+        elif key in ('highlightPressed', 'capitalAlphas', 'adaptiveContrast', 'showPointing', 'pointingPills', 'shiftedLegends', 'altgrLegends'):
             if type(val) is not bool: raise ValueError('Invalid on/off preference')
             result[key] = val
         elif val not in dict(effect=('Off', 'Quick flash', 'Short fade'), hands=('Both', 'Left', 'Right'))[key]:

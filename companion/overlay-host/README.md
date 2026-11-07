@@ -33,6 +33,7 @@ Use Chrome or Edge. **Open Keybard** in the tray menu takes you back to the Over
 
 - **After you edit your layout in Keybard**, the overlay updates by itself about a second after the change reaches the keyboard, as long as Keybard is connected to Keybard Overlay (the Overlay dialog's **Connect**, once). For changes made elsewhere, choose **Reload layout** from the tray.
 - **Held keys:** the keys you're holding are highlighted. Turn this off with **Highlight held keys** in the overlay's menu. Very short taps can be missed.
+- **Keycap legends:** digit and punctuation keys show the shifted symbol top left and the base legend bottom left, for the keyboard language chosen under International keyboards in Keybard. With **AltGr Symbols** on in Keybard's Settings (German, French, Spanish, Italian, Brazilian, Danish and Swiss layouts; not on macOS), the AltGr character is bottom right. The overlay follows these settings (and the keyboard language) while Keybard's Overlay dialog is open; **Shifted Key Symbols** off in Keybard shows one legend per key. A key with no room for the extra legends keeps one centered legend.
 - **Shift and Caps Lock** on your Svalboard change the letters and symbols shown, using the keyboard language chosen in Keybard. Firmware from vNext1 on reports them itself, so other keyboards on the computer don't change the legends. On older firmware the overlay follows the computer's Shift and Caps Lock instead, which doesn't work on Wayland.
 
 ## What it doesn't do

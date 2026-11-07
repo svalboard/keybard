@@ -61,3 +61,14 @@ class StateTests(unittest.TestCase):
         self.assertEqual(validate_config({'layoutId': 'uk'})['layoutId'], 'uk')
         for value in (None, 1, '', 'x' * 33, '<script>'):
             with self.assertRaises(ValueError): validate_config({'layoutId': value})
+
+    def test_legend_settings_follow_keybard_defaults_and_validation(self):
+        # Keybard's Shifted Key Symbols is on and AltGr Symbols off when never set.
+        config = validate_config({})
+        self.assertIs(config['shiftedLegends'], True)
+        self.assertIs(config['altgrLegends'], False)
+        config = validate_config({'shiftedLegends': False, 'altgrLegends': True})
+        self.assertEqual((config['shiftedLegends'], config['altgrLegends']), (False, True))
+        for name in ('shiftedLegends', 'altgrLegends'):
+            for value in (None, 1, 'on'):
+                with self.assertRaises(ValueError): validate_config({name: value})

@@ -2,7 +2,9 @@ import type { KeyContent } from '@/types/keyboard.types';
 import { getHeaderIcons, getCenterContent, getTypeIcon } from '@/utils/key-icons';
 import type { Appearance, Preferences } from './core';
 import { haloColor } from './core';
-export interface SurfaceKey { id: number; x: number; y: number; w: number; h: number; label: string; code: number; layer: number; hand: string; legend?: { keycode: string; keyContents?: KeyContent; displayLabel: string; topLabel: string; bottomStr: string } }
+import { DualLegendFace } from '@/components/DualLegendFace';
+import { KEY_BAND_PX, DIAGONAL_INSET_PX, planLegends, type DualLegend } from '@/lib/shiftedLegends';
+export interface SurfaceKey { id: number; x: number; y: number; w: number; h: number; label: string; code: number; layer: number; hand: string; legend?: { keycode: string; keyContents?: KeyContent; displayLabel: string; topLabel: string; bottomStr: string; dual?: DualLegend } }
 interface Props { keys: SurfaceKey[]; appearance: Appearance; changed: Set<number>; held: Set<number>; effect: Preferences['effect']; duration: number; hidden: Set<number>; target?: number; onSelect?: (id: number) => void; capitals?: boolean; keyAppearance?: Map<number, Appearance> }
 /** A legend that is one letter or digit: drawn larger, and in capitals when asked. */
 const SINGLE_ALNUM = /^[\p{L}\p{N}]$/u;
@@ -33,7 +35,7 @@ export function OverlaySurface({ keys, appearance, changed, held, effect, durati
                     fill={a.changed} fillOpacity={a.fillAlpha / 200} stroke={a.changed} strokeOpacity={a.outlineAlpha / 100} strokeWidth={a.width ? a.width + 1 : 0} />}
                 {isHeld && <rect width={k.w * 40 - 3} height={k.h * 40 - 3} rx="6" fill={a.pressed} fillOpacity={a.fillAlpha / 200} />}
                 {k.legend && !hidden.has(k.id) ? <foreignObject x="2" y="2" width={k.w * 40 - 7} height={k.h * 40 - 7}>
-                    <KeyLegend legend={k.legend} color={a.legend} opacity={a.legendAlpha / 100} halo={a.halo} capitals={capitals} />
+                    <KeyLegend legend={k.legend} width={k.w * 40 - 7} height={k.h * 40 - 7} color={a.legend} opacity={a.legendAlpha / 100} halo={a.halo} capitals={capitals} />
                 </foreignObject> : lines.map((line, i) => <text key={i} x={(k.w * 40 - 3) / 2} y={(k.h * 40 - 3) / 2 + 4 + (i - (lines.length - 1) / 2) * 11}
                     textAnchor="middle" fontSize={SINGLE_ALNUM.test(line) ? 18 : line.length > 5 ? 8 : 12} fontWeight="600"
                     textLength={line.length > 6 ? Math.max(15, k.w * 40 - 9) : undefined} lengthAdjust="spacingAndGlyphs"
@@ -46,7 +48,7 @@ export function OverlaySurface({ keys, appearance, changed, held, effect, durati
 /** A legend halo: stacked shadows build a solid edge in the contrasting color, readable on any background. */
 const HALO = (c: string) => `drop-shadow(0 0 .5px ${c}) drop-shadow(0 0 1px ${c}) drop-shadow(0 0 1.5px ${c})`;
 
-function KeyLegend({ legend: l, color, opacity, halo, capitals }: { legend: NonNullable<SurfaceKey['legend']>; color: string; opacity: number; halo: boolean; capitals: boolean }) {
+function KeyLegend({ legend: l, width, height, color, opacity, halo, capitals }: { legend: NonNullable<SurfaceKey['legend']>; width: number; height: number; color: string; opacity: number; halo: boolean; capitals: boolean }) {
     const { icons, isMouse } = getHeaderIcons(l.keycode, l.displayLabel);
     const layer = l.keyContents?.type === 'layer';
     const icon = getTypeIcon(l.keyContents?.type || '', 'small');
@@ -54,6 +56,16 @@ function KeyLegend({ legend: l, color, opacity, halo, capitals }: { legend: NonN
     const content = layer ? l.keyContents?.top?.split('(')[1]?.replace(')', '') : getCenterContent(l.displayLabel, l.keycode, isMouse);
     const alnum = !layer && typeof content === 'string' && SINGLE_ALNUM.test(content); // not a layer key's number
     const center = alnum && capitals ? capital(content as string) : content;
+    // Digit and punctuation keys draw the keycap grid (shifted top left, base bottom left, AltGr bottom
+    // right) with the same planner as Keybard's keys, at its small size; a key without room keeps one centered legend.
+    const bands = (icons.length > 0 || top ? 1 : 0) + (l.bottomStr ? 1 : 0);
+    const dual = l.dual?.letter && l.dual.shifted && capitals ? { ...l.dual, shifted: capital(l.dual.shifted) } : l.dual;
+    const plan = dual ? planLegends(dual, 'small', height - KEY_BAND_PX.small * bands, width - 2 * DIAGONAL_INSET_PX.small.x, false) : null;
+    if (plan) return <div className="trainer-key-legend" style={{ color, opacity, filter: halo ? HALO(haloColor(color)) : undefined, justifyContent: 'flex-start' }}>
+        {(icons.length > 0 || top) && <div className="trainer-key-heading">{icons.length ? icons : top}</div>}
+        <DualLegendFace plan={plan} variant="small" />
+        {l.bottomStr && <div className="trainer-key-heading">{l.bottomStr}</div>}
+    </div>;
     return <div className="trainer-key-legend" style={{ color, opacity, filter: halo ? HALO(haloColor(color)) : undefined }}>
         {(icons.length > 0 || top) && <div className="trainer-key-heading">{icons.length ? icons : top}</div>}
         <div className="trainer-key-center" style={{ flexDirection: icon && !layer ? 'column' : 'row', fontSize: alnum ? 18 : typeof center === 'string' && center.length > 6 ? 7 : typeof center === 'string' && center.length > 3 ? 9 : 12 }}>

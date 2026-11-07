@@ -3,8 +3,13 @@ import { getKeyDisplayText } from '@/utils/key-display';
 import { keyService } from '@/services/key.service';
 import { getLabelForKeycode } from '@/components/Keyboards/layouts';
 import { getKeyLabel } from '@/utils/layers';
+import { altgrOnlyLegend, dualLegendFor, hasAltGr, type DualLegend, type LegendOptions } from '@/lib/shiftedLegends';
 import { geometry, resolveBinding } from './core';
-export function surfaceKeys(board: KeyboardInfo & { trainerLabels?: Record<string, string> }, active: number, defaults: number, hands: string, layoutId = 'us', modifiers?: { shift: boolean; capsLock: boolean } | null) {
+
+/** What Keybard's Settings decide about legends, sent by Keybard: Shifted Key Symbols and AltGr Symbols. Both off when absent (an older Overlay app sends neither). */
+export type SurfaceLegendOptions = Pick<LegendOptions, 'shifted' | 'altgr'>;
+export function surfaceKeys(board: KeyboardInfo & { trainerLabels?: Record<string, string> }, active: number, defaults: number, hands: string, layoutId = 'us', modifiers?: { shift: boolean; capsLock: boolean } | null, legends: SurfaceLegendOptions = {}) {
+    const wantShifted = legends.shifted === true, wantAltGr = legends.altgr === true;
     if (!board.keymap?.length) return [];
     return geometry(board).filter(k => hands === 'Both' || k.hand === hands).map(k => {
         const binding = resolveBinding(board.keymap!, k.id, active, defaults);
@@ -39,7 +44,18 @@ export function surfaceKeys(board: KeyboardInfo & { trainerLabels?: Record<strin
         const deviceLabel = board.trainerLabels?.[String(binding.code)];
         const needsDeviceLabel = (keycode.startsWith('TD(') && !board.tapdances?.length) ||
             ((binding.code >= 0x7e00 && binding.code <= 0x7fff) && !board.custom_keycodes?.length);
-        return { ...k, ...binding, legend: { keycode, keyContents, ...text, displayLabel: needsDeviceLabel && deviceLabel && keyContents?.type !== 'tapdance' ? deviceLabel : letter }, label: needsDeviceLabel && deviceLabel ? deviceLabel :
+        // The keycap grid and the AltGr character, from the same code Keybard's keys use. A key typing
+        // its shifted symbol (Shift held on this board, or Shift assigned to the key) keeps one legend.
+        const assignedShiftKey = keyContents?.type === 'modmask' && !!(binding.code & 0x0200);
+        let dual: DualLegend | null = modifiers?.shift || assignedShiftKey ? null : dualLegendFor(keycode, label, keyContents, layoutId, { shifted: wantShifted, altgr: wantAltGr });
+        // A letter's capital (top left) follows the case the other letters draw (lowercase unless Shift or Caps Lock).
+        if (dual?.letter && dual.shifted && letter === letter.toLowerCase() && letter !== letter.toUpperCase()) dual = { ...dual, shifted: dual.shifted.toLowerCase() };
+        // With AltGr Symbols on, RALT(KC_2) shows the character it types, and KC_RALT is labeled AltGr.
+        const altgrOnly = wantAltGr ? altgrOnlyLegend(keycode, keyContents, layoutId) : null;
+        const isAltGrKey = wantAltGr && keycode === 'KC_RALT' && hasAltGr(layoutId);
+        if (altgrOnly) { text.bottomStr = ''; letter = altgrOnly; }
+        if (isAltGrKey) { text.topLabel = ''; text.bottomStr = ''; letter = 'AltGr'; }
+        return { ...k, ...binding, legend: { keycode, keyContents, ...text, ...(dual ? { dual } : {}), displayLabel: needsDeviceLabel && deviceLabel && keyContents?.type !== 'tapdance' ? deviceLabel : letter }, label: needsDeviceLabel && deviceLabel ? deviceLabel :
             [text.topLabel, letter, text.bottomStr].filter(Boolean).join('\n') };
     });
 }

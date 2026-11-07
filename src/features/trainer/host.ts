@@ -12,7 +12,9 @@ export const HOST_ORIGIN = (import.meta.env.VITE_KEYBARD_HOST_ORIGIN as string |
 const REMOTE_KEY = 'keybard-host-remote';
 const servedByHost = () => typeof document !== 'undefined' && document.documentElement.dataset.keybardHost === 'true';
 function rememberedRemote() { try { return appStorage.getItem(REMOTE_KEY) === '1'; } catch { return false; } }
-export interface HostConfig extends Preferences { highlightPressed: boolean; manualDefault: number; capitalAlphas?: boolean; adaptiveContrast?: boolean }
+export interface HostConfig extends Preferences { highlightPressed: boolean; manualDefault: number; capitalAlphas?: boolean; adaptiveContrast?: boolean;
+    /** Keybard's Settings > General > Shifted Key Symbols and AltGr Symbols, which Keybard sends (like layoutId). */
+    shiftedLegends?: boolean; altgrLegends?: boolean }
 export interface HostSnapshot {
     modifiers?: { shift: boolean; capsLock: boolean } | null;
     apiVersion: number; config: HostConfig; revision: number; layoutRevision: number;
