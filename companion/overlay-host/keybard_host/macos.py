@@ -28,6 +28,15 @@ def is_mac(platform=None):
     return (platform or sys.platform) == 'darwin'
 
 
+def _platform_name():
+    """Qt's QPA plugin name, or '' with no application yet.
+
+    Imported here so the module keeps working without Qt installed."""
+    from PySide6.QtGui import QGuiApplication
+    app = QGuiApplication.instance()
+    return app.platformName() if app else ''
+
+
 def _runtime():
     global _runtime_lib
     if _runtime_lib is None:
@@ -62,11 +71,14 @@ def hide_dock_icon(platform=None):
         return False
 
 
-def float_window(widget, platform=None):
+def float_window(widget, platform=None, qpa=None):
     """Keep an overlay window on every Space, over full-screen apps, and shown
     while another app is active. Qt can recreate the native window when its
     flags change, so call this each time the window is shown."""
     if not is_mac(platform): return False
+    # Only Cocoa's winId() is an NSView*. Under the offscreen platform the tests
+    # run on, it's a placeholder, and messaging that address kills the process.
+    if (_platform_name() if qpa is None else qpa) != 'cocoa': return False
     try:
         view = int(widget.winId())  # an NSView* on macOS
         if not view: return False
