@@ -67,7 +67,7 @@ export function installFakeBoard(choice: FakeBoardChoice): HIDDevice {
     const device = new FakeSvalboardDevice({ comboLabels: choice !== "old", typingPause: current, flickerLatch: current,
         debugConsole: current && choice !== "touchpad-434", debounceSwitch: current,
         timingUsOnly: current, seedTurbo: choice === "turbo6" ? 6 : undefined, seedLeaderZero: choice === "leader0", seedUnread: choice === "unread", seedLegends: choice === "legends", seedAltRepeat: choice === "altrepeat", reportLength: current ? 64 : 32,
-        padGestures: current, scrollSpeed: current && choice !== "touchpad-434", leftTrackball: pointing, touchpad: pads, modules, hostTouchpad: choice === "touchpad" || choice === "touchpad-434" || choice === "pointing-os", multiFinger: choice !== "touchpad-434" });
+        padGestures: current, scrollSpeed: current && choice !== "touchpad-434", autoMouseLayers: current && choice !== "touchpad-434", leftTrackball: pointing, touchpad: pads, modules, hostTouchpad: choice === "touchpad" || choice === "touchpad-434" || choice === "pointing-os", multiFinger: choice !== "touchpad-434" });
     const wipe = () => {
         device.forgetSettings();
         window.location.reload();

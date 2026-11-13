@@ -20,6 +20,7 @@
         "test:e2e:scroll-keys": "python tests/e2e/scroll_keys_e2e.py",
         "test:e2e:tap-dance": "python tests/e2e/tapdance_term_e2e.py",
         "test:e2e:pointing": "python tests/e2e/pointing_e2e.py",
+        "test:e2e:automouse-layers": "python tests/e2e/automouse_layers_e2e.py",
         "test:e2e:firmware": "python tests/e2e/firmware_manual_e2e.py",
         "test:e2e:by-hand": "python tests/e2e/by_hand_download_e2e.py",
         "test:e2e:fake-board": "python tests/e2e/fake_board_e2e.py",

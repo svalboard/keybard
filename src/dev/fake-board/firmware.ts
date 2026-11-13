@@ -67,6 +67,8 @@ export const FLAG4_POINTING_SENSOR = 0x08;
 export const FLAG4_SCROLL_SPEED = 0x20;
 // flags4 bit 6: a TrackPoint's pointer speed is software scaling (DPI choices up to 3200).
 export const FLAG4_TRACKPOINT_SPEED = 0x40;
+// flags4 bit 7: Auto Mouse layers (VIA 63 the mode, 64 the 16-bit mask of layers where it is off).
+export const FLAG4_AUTOMOUSE_LAYERS = 0x80;
 
 /** What a half's pointing slot holds (the 0x2C reply's detected module). */
 export type FakeModule = "pmw3389" | "azoteq" | "trackpoint" | "none";
@@ -160,6 +162,8 @@ export interface FakeFirmwareOptions {
     padGestures?: boolean;
     /** Firmware with Scroll speed (VIA 61 and 62, GET_INFO byte 21 bit 4). Default true. */
     scrollSpeed?: boolean;
+    /** Firmware with Auto Mouse layers (VIA 63 and 64, GET_INFO byte 21 bit 7). Default true. */
+    autoMouseLayers?: boolean;
     /** A PMW3389 trackball on the left half and the touchpad on the right (with touchpad). Default false. */
     leftTrackball?: boolean;
     /** An Azoteq touchpad on each half (0x2C, 0x18), instead of no pointing module. Default false. */
@@ -251,6 +255,10 @@ export class FakeSvalFirmware {
     readonly timingUsOnly: boolean;
     readonly padGestures: boolean;
     readonly scrollSpeed: boolean;
+    readonly autoMouseLayers: boolean;
+    /** Auto Mouse layers: the mode (0 Everywhere, 1 Only on Selected Layers) and the mask of layers where it is off. */
+    autoMouseLayersMode = 0;
+    autoMouseLayerMask = 0;
     readonly leftTrackball: boolean;
     /** Scroll speed per hand, percent: left, right. */
     scrollSpeedPct: [number, number] = [100, 100];
@@ -343,6 +351,7 @@ export class FakeSvalFirmware {
         this.timingUsOnly = options.timingUsOnly ?? true;
         this.padGestures = options.padGestures ?? true;
         this.scrollSpeed = options.scrollSpeed ?? true;
+        this.autoMouseLayers = options.autoMouseLayers ?? true;
         const padBoard = options.touchpad ?? false;
         this.modules = options.modules
             ?? (padBoard ? { left: options.leftTrackball ? "pmw3389" : "azoteq", right: "azoteq" } : { left: "none", right: "none" });
@@ -811,6 +820,18 @@ export class FakeSvalFirmware {
             }
             return;
         }
+        if (this.autoMouseLayers && (valueId === 63 || valueId === 64)) {
+            if (command === 0x07) {
+                this.customWrites.push({ id: valueId, value: Array.from(value.subarray(0, 2)) });
+                if (valueId === 63) this.autoMouseLayersMode = value[0] ? 1 : 0;
+                else this.autoMouseLayerMask = value[0] | (value[1] << 8);
+                this.changed();
+            } else if (command === 0x08) {
+                if (valueId === 63) value[0] = this.autoMouseLayersMode;
+                else { value[0] = this.autoMouseLayerMask & 0xff; value[1] = this.autoMouseLayerMask >> 8; }
+            }
+            return;
+        }
         if (this.scrollSpeed && (valueId === 61 || valueId === 62)) {
             const hand = valueId === 61 ? 0 : 1;
             if (command === 0x07) {
@@ -1104,7 +1125,8 @@ export class FakeSvalFirmware {
                 if (length > 20) data[20] = this.featureFlags3;
                 if (length > 21) data[21] = (this.padGestures && this.touchpad && this.multiFinger ? FLAG4_PAD_PALM | FLAG4_PAD_MODE : 0)
                     | (this.debugConsole ? FLAG4_DEBUG_CONSOLE : 0) | FLAG4_POINTING_SENSOR | (this.scrollSpeed ? FLAG4_SCROLL_SPEED : 0)
-                    | (this.modules.left === "trackpoint" || this.modules.right === "trackpoint" ? FLAG4_TRACKPOINT_SPEED : 0);
+                    | (this.modules.left === "trackpoint" || this.modules.right === "trackpoint" ? FLAG4_TRACKPOINT_SPEED : 0)
+                    | (this.autoMouseLayers ? FLAG4_AUTOMOUSE_LAYERS : 0);
                 break;
             }
             case 0x2a: // STORAGE_RESET_CLEAR

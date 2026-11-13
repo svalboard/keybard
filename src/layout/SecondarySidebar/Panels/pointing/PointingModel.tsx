@@ -26,6 +26,8 @@ import {
 import { onPointingAutoMouseRequest, takePointingAutoMouseRequest } from "../settings/anchor";
 import { POINTING_AUTOMOUSE_ID } from "../settings/layout";
 import { ChoiceRow, RangeRow, SelectRow, SliderRow, ToggleRow } from "./PointingControls";
+import { AutoMouseLayersSetting } from "./AutoMouseLayers";
+import { AUTOMOUSE_LAYERS_ONLY_KEY, hasAutoMouseLayers } from "@/utils/automouse-layers";
 
 const SIDE_NAME: Record<Side, string> = { left: "Left hand", right: "Right hand" };
 
@@ -291,7 +293,7 @@ export function ModelNotices() {
  * AutoMouse group, under the group's heading and above the AutoMouse keys (AutoMouse Toggle, Layer Time).
  */
 export function AutoMouseSettings() {
-    const { item, values, set, isConnected, menu } = usePointingModel();
+    const { item, values, set, isConnected, menu, keyboard, flags4 } = usePointingModel();
     const handsShown = useHandCards();
     if (!isConnected || !menu || !item(AUTOMOUSE_ENABLE_KEY)) return null;
     const autoOn = values.get(AUTOMOUSE_ENABLE_KEY) === 1;
@@ -311,6 +313,7 @@ export function AutoMouseSettings() {
     return (
         <div className="flex flex-col gap-2 pb-2" data-automouse-settings>
             {toggle(AUTOMOUSE_ENABLE_KEY, "Enable Auto Mouse", "Switch to the mouse layer when a pointer moves")}
+            {autoOn && keyboard && hasAutoMouseLayers(flags4) && item(AUTOMOUSE_LAYERS_ONLY_KEY) && <AutoMouseLayersSetting keyboard={keyboard} values={values} set={set} />}
             {autoOn && handsShown.map((h) => toggle(HAND_KEYS[h.side].automouse, `${h.side === "left" ? "Left" : "Right"} Pointer Activates`, "This hand switches to the mouse layer"))}
             {autoOn && toggle(AUTOMOUSE_NO_TIMEOUT_KEY, "No Layer Timeout", "The layer never returns on its own")}
             {autoOn && noTimeout === 0 && range(AUTOMOUSE_TIMEOUT_KEY, "Layer Timeout", "How long the layer stays once the pointer rests", (v) => `${v} ms`)}
