@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { KeyContent } from '@/types/keyboard.types';
 import { getHeaderIcons, getCenterContent, getTypeIcon } from '@/utils/key-icons';
 import type { Appearance, Preferences } from './core';
@@ -18,7 +19,15 @@ export function OverlaySurface({ keys, appearance, changed, held, effect, durati
     const minX = Math.min(...keys.map(k => k.x)), minY = Math.min(...keys.map(k => k.y));
     const width = Math.max(...keys.map(k => k.x + k.w)) - minX;
     const height = Math.max(...keys.map(k => k.y + k.h)) - minY;
-    return <svg role="img" aria-label="Overlay keyboard preview" viewBox={`-4 -4 ${width * 40 + 8} ${height * 40 + 8}`}>
+    const viewWidth = width * 40 + 8, viewHeight = height * 40 + 8;
+    return <SurfaceFrame viewWidth={viewWidth} viewHeight={viewHeight} legends={keys.map(k => {
+        if (!k.legend || hidden.has(k.id)) return null;
+        const a = keyAppearance?.get(k.id) ?? appearance;
+        // The key's group sits at (x, y) * 40 in a drawing that starts at -4, and its legend 2 px inside it.
+        return <div key={k.id} data-key-id={k.id} style={{ left: (k.x - minX) * 40 + 6, top: (k.y - minY) * 40 + 6, width: k.w * 40 - 7, height: k.h * 40 - 7 }}>
+            <KeyLegend legend={k.legend} width={k.w * 40 - 7} height={k.h * 40 - 7} color={a.legend} opacity={a.legendAlpha / 100} halo={a.halo} capitals={capitals} />
+        </div>;
+    })}><svg role="img" aria-label="Overlay keyboard preview" viewBox={`-4 -4 ${viewWidth} ${viewHeight}`}>
         {keys.map(k => {
             const a = keyAppearance?.get(k.id) ?? appearance;
             const isHeld = held.has(k.id), isChanged = changed.has(k.id) && effect !== 'Off';
@@ -34,15 +43,44 @@ export function OverlaySurface({ keys, appearance, changed, held, effect, durati
                 {isChanged && <rect className={effect === 'Short fade' ? 'trainer-fade' : ''} style={{ animationDuration: `${duration}ms` }} width={k.w * 40 - 3} height={k.h * 40 - 3} rx="6"
                     fill={a.changed} fillOpacity={a.fillAlpha / 200} stroke={a.changed} strokeOpacity={a.outlineAlpha / 100} strokeWidth={a.width ? a.width + 1 : 0} />}
                 {isHeld && <rect width={k.w * 40 - 3} height={k.h * 40 - 3} rx="6" fill={a.pressed} fillOpacity={a.fillAlpha / 200} />}
-                {k.legend && !hidden.has(k.id) ? <foreignObject x="2" y="2" width={k.w * 40 - 7} height={k.h * 40 - 7}>
-                    <KeyLegend legend={k.legend} width={k.w * 40 - 7} height={k.h * 40 - 7} color={a.legend} opacity={a.legendAlpha / 100} halo={a.halo} capitals={capitals} />
-                </foreignObject> : lines.map((line, i) => <text key={i} x={(k.w * 40 - 3) / 2} y={(k.h * 40 - 3) / 2 + 4 + (i - (lines.length - 1) / 2) * 11}
+                {k.legend && !hidden.has(k.id) ? null : lines.map((line, i) => <text key={i} x={(k.w * 40 - 3) / 2} y={(k.h * 40 - 3) / 2 + 4 + (i - (lines.length - 1) / 2) * 11}
                     textAnchor="middle" fontSize={SINGLE_ALNUM.test(line) ? 18 : line.length > 5 ? 8 : 12} fontWeight="600"
                     textLength={line.length > 6 ? Math.max(15, k.w * 40 - 9) : undefined} lengthAdjust="spacingAndGlyphs"
                     fill={a.legend} fillOpacity={a.legendAlpha / 100} stroke={a.halo ? haloColor(a.legend) : 'none'} strokeOpacity={a.legendAlpha / 100} strokeWidth="3" paintOrder="stroke fill">{capitals && SINGLE_ALNUM.test(line) ? capital(line) : line}</text>)}
             </g>;
         })}
-    </svg>;
+    </svg></SurfaceFrame>;
+}
+
+/**
+ * The key drawing (an SVG) with the legends laid over it as ordinary HTML.
+ *
+ * The legends used to be HTML inside an SVG <foreignObject> on each key. WebKit (Safari, and the web views of
+ * macOS and Linux) paints such HTML at the SVG's corner, unscaled, as soon as it has a filter, an opacity,
+ * clipping or positioning, and the legends have all four: every legend piled up in the top-left corner over
+ * blank keys. HTML outside the SVG is painted the same by every engine. The layer has the drawing's own size
+ * in its units and is scaled and centered exactly as the SVG scales its viewBox (fit inside, centered).
+ */
+function SurfaceFrame({ viewWidth, viewHeight, legends, children }: { viewWidth: number; viewHeight: number; legends: ReactNode; children: ReactNode }) {
+    const frame = useRef<HTMLDivElement>(null);
+    const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+    useLayoutEffect(() => {
+        const el = frame.current;
+        if (!el) return;
+        const measure = () => { const r = el.getBoundingClientRect(); setSize(s => (s && s.w === r.width && s.h === r.height ? s : { w: r.width, h: r.height })); };
+        measure();
+        if (typeof ResizeObserver === 'undefined') { window.addEventListener('resize', measure); return () => window.removeEventListener('resize', measure); }
+        const observer = new ResizeObserver(measure);
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+    // Before the first measurement (and where there is no layout, as in unit tests) the layer is unscaled.
+    const scale = size && size.w && size.h ? Math.min(size.w / viewWidth, size.h / viewHeight) : 1;
+    const left = size ? (size.w - viewWidth * scale) / 2 : 0, top = size ? (size.h - viewHeight * scale) / 2 : 0;
+    return <div className="trainer-surface" ref={frame}>
+        {children}
+        <div className="trainer-legends" style={{ left, top, width: viewWidth, height: viewHeight, transform: `scale(${scale})`, visibility: size ? undefined : 'hidden' }}>{legends}</div>
+    </div>;
 }
 
 /** A legend halo: stacked shadows build a solid edge in the contrasting color, readable on any background. */

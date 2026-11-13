@@ -43,6 +43,7 @@
         "test:e2e:mouse-limits": "python tests/e2e/mouse_key_limits_e2e.py",
         "test:e2e:shifted-legends": "python tests/e2e/shifted_legends_e2e.py",
         "test:e2e:auto-legends": "python tests/e2e/auto_legends_e2e.py",
+        "test:e2e:overlay-legends": "python tests/e2e/overlay_legends_e2e.py",
         "build:sval-preview": "tsc && vite build --mode sval-preview",
         "build:svalboard": "tsc && vite build --mode svalboard",
         "build:next": "tsc && vite build --mode next",

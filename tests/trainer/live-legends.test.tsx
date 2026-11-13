@@ -33,16 +33,17 @@ describe('live overlay legends', () => {
         'normalizes %s', (key,label) => expect(keys(key)[0].label).toBe(label));
     it.each(['MO(3)', 'TG(3)', 'DF(3)', 'TO(3)', 'OSL(3)'])('renders the shared layer icon for %s', (action) => {
         const { container } = render(<OverlaySurface keys={keys(action)} appearance={DEFAULTS.appearance} changed={new Set()} held={new Set()} hidden={new Set()} effect="Off" duration={150} />);
-        expect(container.querySelector('foreignObject svg path')).not.toBeNull();
+        expect(container.querySelector('.trainer-legends svg path')).not.toBeNull();
         expect(container.querySelector('.trainer-key-center')?.textContent).toBe('3');
         expect(container.querySelector('.trainer-key-heading')?.textContent).toBeTruthy();
     });
     it.each(['TD(4)', 'M0', 'KC_UP', 'KC_MS_UP'])('renders shared icons for %s', action => {
         const { container } = render(<OverlaySurface keys={keys(action)} appearance={DEFAULTS.appearance} changed={new Set()} held={new Set()} hidden={new Set()} effect="Off" duration={150} />);
-        expect(container.querySelector('foreignObject svg')).not.toBeNull();
+        expect(container.querySelector('.trainer-legends svg')).not.toBeNull();
     });
     it('hides icons as well as labels during practice', () => {
         const { container } = render(<OverlaySurface keys={keys('MO(3)')} appearance={DEFAULTS.appearance} changed={new Set()} held={new Set()} hidden={new Set([0])} effect="Off" duration={150} />);
+        expect(container.querySelector('.trainer-legends > div')).toBeNull();
         expect(container.querySelector('foreignObject')).toBeNull();
         expect(container.querySelector('text')?.textContent).toBe('·');
     });
