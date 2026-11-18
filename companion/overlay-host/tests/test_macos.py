@@ -56,26 +56,37 @@ class NativeCallTests(unittest.TestCase):
 
     def test_float_window_joins_all_spaces_and_stays_shown(self):
         widget = Mock(); widget.winId.return_value = 0x3000
-        self.assertTrue(macos.float_window(widget, 'darwin'))
+        self.assertTrue(macos.float_window(widget, 'darwin', 'cocoa'))
         self.assertEqual(self.send.call_args_list[0].args[:2], (0x3000, 'window'))
         self.assertEqual(self.selectors(), ['window', 'setCollectionBehavior:', 'setHidesOnDeactivate:'])
         behavior = self.send.call_args_list[1].args[3][1]
         self.assertEqual(behavior, (1 << 0) | (1 << 4) | (1 << 6) | (1 << 8))
         self.assertEqual(self.send.call_args_list[2].args[3], (ctypes.c_bool, False))
 
+    def test_only_a_cocoa_window_id_is_an_nsview(self):
+        """Qt's offscreen platform hands out a placeholder winId(), not an NSView*."""
+        widget = Mock(); widget.winId.return_value = 0x3000
+        for qpa in ('offscreen', 'minimal', ''):
+            self.assertFalse(macos.float_window(widget, 'darwin', qpa), qpa)
+        self.send.assert_not_called()
+        if QT:
+            QApplication.instance() or QApplication([])
+            self.assertFalse(macos.float_window(widget, 'darwin'))  # asks Qt for the platform
+            self.send.assert_not_called()
+
     def test_failures_leave_qt_defaults(self):
         widget = Mock(); widget.winId.return_value = 0x3000
         self.send.side_effect = OSError('no libobjc')
         self.assertFalse(macos.hide_dock_icon('darwin'))
-        self.assertFalse(macos.float_window(widget, 'darwin'))
+        self.assertFalse(macos.float_window(widget, 'darwin', 'cocoa'))
         self.send.side_effect = None; self.send.return_value = 0
-        self.assertFalse(macos.float_window(widget, 'darwin'))
+        self.assertFalse(macos.float_window(widget, 'darwin', 'cocoa'))
 
     def test_missing_runtime_library_is_harmless(self):
         patch.stopall()
         with patch('keybard_host.macos._runtime_lib', None), patch('ctypes.cdll.LoadLibrary', side_effect=OSError):
             self.assertFalse(macos.hide_dock_icon('darwin'))
-            self.assertFalse(macos.float_window(Mock(winId=Mock(return_value=1)), 'darwin'))
+            self.assertFalse(macos.float_window(Mock(winId=Mock(return_value=1)), 'darwin', 'cocoa'))
 
 
 class BrowserTests(unittest.TestCase):
