@@ -1,5 +1,11 @@
-"""Strictly read-only Sval v2/v3 client with the mandatory client wrapper."""
+"""Read-only Sval v2/v3 client with the mandatory client wrapper.
+
+It reads, and sends one thing only: which app is in front (APP_FOREGROUND, 0x40, SET or
+CLEAR), to a board that advertises app rules. From APP_RULES (0x41) it sends only INFO and
+READ, to learn the rules' sites (site rules); it never writes rules. That is runtime state the board forgets
+after 15 s; it changes nothing stored on the board (see app_foreground below)."""
 from dataclasses import dataclass, replace
+from collections import namedtuple
 import secrets
 import sys
 import time
@@ -41,7 +47,29 @@ MAX_CONTACTS = 6
 PAD_COUNTS_X, PAD_COUNTS_Y = 2048, 1792
 SHIFT_BITS = 0x22  # left and right Shift in the HID modifier byte
 ALTGR_BIT = 0x40  # right Alt in the HID modifier byte: AltGr on layouts that have one
-# Protocol -> command -> exact request argument length. No setter is expressible.
+# Fifth feature byte (GET_INFO byte 22), bit 0: the board runs app rules and takes
+# APP_FOREGROUND (0x40). Older firmware leaves it zero or sends a shorter reply.
+APP_RULES_FLAG5 = 0x01
+APP_FOREGROUND = 0x40
+APP_STATUS, APP_SET, APP_CLEAR = 0x00, 0x01, 0x02
+# APP_FOREGROUND status: the request reached the half without USB, which runs no rules.
+APP_STATUS_NOT_USB_HALF = 2
+# APP_RULES: only INFO and READ are ever sent from here.
+APP_RULES = 0x41
+APP_RULES_INFO, APP_RULES_READ = 0x00, 0x01
+APP_RULES_HEADER, APP_RULES_MAX, APP_RULES_CHUNK = 4, 64, 48
+# Format 2 (packed): header [2][count][flags][0], then per rule 12 bytes and its text:
+# id u32, default, front, on u16, off u16, flags, text length, text (UTF-8).
+APP_RULES_FORMAT, APP_RULE_HEAD, APP_RULES_RECORD = 2, 12, 1792
+APP_RULES_OFF = 0x01       # header flags: App Layers off (no rule applies; the Host reads no addresses)
+APP_RULE_OFF = 0x01        # rule flags: this rule is off
+APP_RULE_SITE = 0x02       # rule flags: a website rule; its text is the site
+# Format 1 (older test firmware): 24-byte rules with a 13-byte label at 11.
+APP_RULES_FORMAT1, APP_RULE_BYTES1 = 1, 24
+APP_RULE_LABEL = slice(11, 24)
+AppRules = namedtuple("AppRules", "enabled rules")  # rules: [(app ID, text, flags)]
+# Protocol -> command -> exact request argument length. No setter is expressible: the
+# one request that isn't a read, APP_FOREGROUND, has its own fixed-shape methods.
 READ_COMMANDS = {
     0xDF: {0x00: 0, 0x01: 2, 0x0D: 0, 0x0E: 3, 0x16: 0, 0x18: 0, 0x19: 0, 0x1B: 3, 0x2D: 1, 0x2F: 0},
     0xFE: {0x02: 2, 0x11: 0, 0x12: 3},
@@ -357,6 +385,7 @@ class SvalReader:
         self.renew_at = 0
         self.feature_flags = 0
         self.feature_flags2 = 0
+        self.feature_flags5 = 0
         self.load_deadline = None
         # The last board definition read: it only changes with new firmware, so a refresh reuses it.
         self.cached_definition = None
@@ -435,6 +464,9 @@ class SvalReader:
             raise ValueError("Command or argument length is outside the trainer read allowlist")
         if protocol == 0xFE and command == 0x02 and args != b"\x03\x00":
             raise ValueError("Only the read-only switch matrix at row zero is allowed")
+        return self._transact(command, args, protocol)
+
+    def _transact(self, command, args, protocol):
         for attempt in range(2):
             self.checkpoint()
             if not self.client_id or self.clock() >= self.renew_at:
@@ -457,7 +489,7 @@ class SvalReader:
                 data = reply[7:]
                 echo_length = (3 if protocol == 0xFE and command == 0x12 else
                                2 if (protocol == 0xDF and command in (0x01, 0x0E)) or (protocol == 0xFE and command == 0x02) else
-                               1 if protocol == 0xDF and command == 0x1B else 0)
+                               1 if protocol == 0xDF and command in (0x1B, APP_FOREGROUND, APP_RULES) else 0)
                 if data[:echo_length] != args[:echo_length]:
                     return None
                 return data
@@ -477,20 +509,108 @@ class SvalReader:
             raise ProtocolError(f"Sval protocol {version} is not supported")
         self.feature_flags = data[12]
         self.feature_flags2 = data[17] if len(data) > 17 else 0
+        self.feature_flags5 = data[20] if len(data) > 20 else 0
         return version, int.from_bytes(data[4:12], "little")
 
+    def app_rules(self):
+        """Whether the board takes APP_FOREGROUND (known after info())."""
+        return bool(self.feature_flags5 & APP_RULES_FLAG5)
+
+    def app_foreground(self, app_id, lifetime=0):
+        """SET: the app in front (0: none). Lifetime 0 is the board's 15 s. Returns the reply's
+        (status, rule index or 0xFF, flags). Never sent to a board without app rules."""
+        if not self.app_rules():
+            raise UnsupportedCommand("Board does not advertise app rules")
+        if type(app_id) is not int or not 0 <= app_id <= 0xFFFFFFFF or type(lifetime) is not int or not 0 <= lifetime <= 60:
+            raise ValueError("App ID must be a u32 and the lifetime 0-60 s")
+        data = self._transact(APP_FOREGROUND, bytes((APP_SET,)) + app_id.to_bytes(4, "little") + bytes((lifetime,)), 0xDF)
+        return data[1], data[2], data[3]
+
+    def app_clear(self):
+        """CLEAR: the Host is leaving, so no app is in front now. Returns the status."""
+        if not self.app_rules():
+            raise UnsupportedCommand("Board does not advertise app rules")
+        return self._transact(APP_FOREGROUND, bytes((APP_CLEAR,)), 0xDF)[1]
+
+    def app_rules_read(self):
+        """The rules in use, from APP_RULES INFO and READ (never a write): AppRules(enabled,
+        [(app ID, text, flags)]). enabled is False while App Layers is off on the board. Raises
+        ProtocolError on a reply that doesn't fit; no rules for a board that stored none."""
+        if not self.app_rules():
+            raise UnsupportedCommand("Board does not advertise app rules")
+        info = self._transact(APP_RULES, bytes((APP_RULES_INFO,)), 0xDF)
+        if info is None or len(info) < 10 or info[1] != 0:
+            raise ProtocolError("App rules INFO failed")
+        count = min(info[5], APP_RULES_MAX)
+        if info[2] == APP_RULES_FORMAT and info[4] == APP_RULE_HEAD and len(info) >= 13:
+            total = min(int.from_bytes(info[10:12], "little"), APP_RULES_RECORD)
+        elif info[2] == APP_RULES_FORMAT1 and info[4] == APP_RULE_BYTES1:
+            total = APP_RULES_HEADER + count * APP_RULE_BYTES1
+        else:
+            raise ProtocolError(f"Unknown app rules format {info[2]}")
+        record = self._app_rules_bytes(max(total, APP_RULES_HEADER), info[8])
+        if record[0] == 0 and record[1] == 0: return AppRules(True, [])
+        if record[0] == APP_RULES_FORMAT1:
+            out = []
+            for i in range(min(record[1], count)):
+                rule = record[APP_RULES_HEADER + i * APP_RULE_BYTES1:APP_RULES_HEADER + (i + 1) * APP_RULE_BYTES1]
+                label = bytes(rule[APP_RULE_LABEL]).split(b"\0", 1)[0].decode("utf-8", "replace")
+                out.append((int.from_bytes(rule[:4], "little"), label, 0))
+            return AppRules(True, out)
+        if record[0] != APP_RULES_FORMAT: raise ProtocolError(f"Unknown app rules record format {record[0]}")
+        out, at = [], APP_RULES_HEADER
+        for _ in range(min(record[1], APP_RULES_MAX)):
+            if at + APP_RULE_HEAD > len(record): raise ProtocolError("App rules record ends inside a rule")
+            n = record[at + 11]
+            if at + APP_RULE_HEAD + n > len(record): raise ProtocolError("App rules record ends inside a rule's text")
+            text = bytes(record[at + APP_RULE_HEAD:at + APP_RULE_HEAD + n]).decode("utf-8", "replace")
+            out.append((int.from_bytes(record[at:at + 4], "little"), text, record[at + 10]))
+            at += APP_RULE_HEAD + n
+        return AppRules(not record[2] & APP_RULES_OFF, out)
+
+    def _app_rules_bytes(self, total, board_chunk):
+        """READ the first total bytes of the record, in chunks that fit the report."""
+        # Reply data: [op][status][offset:2][len][bytes], after the 7-byte wrapper and command.
+        chunk = max(1, min(board_chunk or APP_RULES_CHUNK, APP_RULES_CHUNK, (self.report_size or 32) - 12))
+        record = bytearray()
+        for offset in range(0, total, chunk):
+            length = min(chunk, total - offset)
+            data = self._transact(APP_RULES, bytes((APP_RULES_READ,)) + offset.to_bytes(2, "little") + bytes((length,)), 0xDF)
+            if (data is None or len(data) < 5 + length or data[1] != 0
+                    or int.from_bytes(data[2:4], "little") != offset or data[4] != length):
+                raise ProtocolError("App rules READ failed")
+            record += data[5:5 + length]
+        return record
+
+    def app_layers(self):
+        """With app rules, the layers keys use now and the default layer state, from
+        APP_FOREGROUND STATUS: a rule changes layers without touching the user's own state
+        (0x16). None on other firmware or when the read fails, so callers use 0x16."""
+        if not self.app_rules():
+            return None
+        data = self._transact(APP_FOREGROUND, bytes((APP_STATUS,)), 0xDF)
+        if data is None or len(data) < 31 or data[1] != 0:
+            return None
+        return int.from_bytes(data[26:30], "little"), int.from_bytes(data[18:22], "little")
+
     def layer_state(self):
-        return int.from_bytes(self._read(0x16)[:4], "little")
+        shown = self.app_layers()
+        return shown[0] if shown else int.from_bytes(self._read(0x16)[:4], "little")
 
     def layer_snapshot(self):
+        """The layers to show (the rule's, with app rules), the default layer and the modifiers."""
         data = self._read(0x16)
         default = (int.from_bytes(data[4:8], "little")
                    if self.feature_flags & DEFAULT_LAYER_STATE_FLAG else None)
+        active = int.from_bytes(data[:4], "little")
+        shown = self.app_layers()
+        if shown:
+            active, default = shown
         modifiers = None
         if self.feature_flags2 & MODIFIER_STATE_FLAG2:
             mods, status = data[8], data[9]
             modifiers = dict(shift=bool(mods & SHIFT_BITS), capsLock=bool(status & 2) != bool(status & 1), altgr=bool(mods & ALTGR_BIT))
-        return LayerSnapshot(int.from_bytes(data[:4], "little"), default, modifiers)
+        return LayerSnapshot(active, default, modifiers)
 
     def pointing_motion(self):
         """Each hand's motion since the last read, or None on firmware without 0x2D (never sent there)."""

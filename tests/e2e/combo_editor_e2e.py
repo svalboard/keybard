@@ -337,7 +337,11 @@ def flow_new_leader_and_alt_repeat_are_on(browser, url):
     page.goto(f"{url}?{REVIEW}&theme=light")
     page.locator("[data-keycap]:visible").first.wait_for(timeout=20000)
     for rail, toggle in [("Leaders", "Leader sequence enabled"), ("Alt-Repeat", "Alt-repeat enabled")]:
-        page.get_by_role("button", name=rail, exact=True).first.click()
+        if rail == "Alt-Repeat":  # Alt-Repeat is under the rail's More
+            page.get_by_role("button", name="More", exact=True).first.click()
+            page.locator("[data-more-tool='altrepeat']").click()
+        else:
+            page.get_by_role("button", name=rail, exact=True).first.click()
         page.locator("[data-binding-row='0']").first.click()
         expect(toggle_on(page, toggle)).to_have_attribute("aria-pressed", "false")  # an unused slot reads off
         click_picker_key(page, "Q")  # from the panel's Standard Keys into the selected slot

@@ -9,6 +9,8 @@ import { NO_SELECTION } from "./fragment.service";
 import { NOT_LAYOUT_VALUES } from "../utils/touchpad-tuning";
 
 import { usableTapdanceTerm } from "../utils/tapdance-term";
+import { hasAppRules, sameRules, writeAppRules } from "./app-rules";
+import { rememberAppKeys } from "../utils/app-rule-keys";
 
 /** A keycode as the firmware stores it: entries read from a file hold names, the board's hold names or numbers. */
 const kc = (value: unknown): number => typeof value === "string" ? keyService.parse(value) : Number(value ?? 0);
@@ -216,6 +218,17 @@ export class ImportService {
                     if (!await services.keyboardService.updateFragmentSelection(newKb, idx, wanted)) throw new Error(`Keyboard rejected the selection for ${newKb.composition!.instances[idx].id}`);
                 }, { writeKey: `fragment:${idx}` });
             }
+        }
+
+        // App rules: one write of the whole list, to a board that has them and whose rules were read.
+        const appLayersOn = newKb.app_layers_enabled !== false;
+        if (newKb.app_rules && currentKb.app_rules && hasAppRules(currentKb.feature_flags5)
+            && (!sameRules(newKb.app_rules, currentKb.app_rules) || appLayersOn !== (currentKb.app_layers_enabled !== false))) {
+            const rules = newKb.app_rules;
+            rememberAppKeys(rules.map((rule) => rule.key ?? ""));
+            await queue("Update app rules", async () => {
+                await writeAppRules(services.appRulesLink ?? usbInstance, rules, appLayersOn);
+            }, { type: "setting", writeKey: "app-rules" });
         }
 
         // 6. Sync QMK Settings

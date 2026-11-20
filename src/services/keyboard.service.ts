@@ -1,6 +1,8 @@
 import { withTouchpadTaps } from "@/utils/touchpad-taps";
 import { withScrollSpeed } from "@/utils/pointing-settings";
 import { withAutoMouseLayers } from "@/utils/automouse-layers";
+import { hasAppRules, readAppForeground, readAppRules } from "@/services/app-rules";
+import { ruleKey } from "@/utils/app-rule-keys";
 import {
     hasPadFingers, hasPadTouch as hasPadTouchFlag, PAD_FINGERS_PAGE, PAD_TOUCH_PAGE, parsePadFingers, parsePadTouch, type PadTouchReport,
 } from "@/utils/touchpad-tuning";
@@ -213,6 +215,21 @@ export class KeyboardService {
 
         await this.getPointingHardware(kbinfo);
 
+        // App rules (GET_INFO byte 22 bit 0). A failed read leaves them unread (absent), never "none".
+        if (hasAppRules(kbinfo.feature_flags5)) {
+            try {
+                const { rules, enabled, info } = await readAppRules(this.usb);
+                kbinfo.app_rules = rules.map((rule) => ({ ...rule, key: ruleKey(rule) }));
+                kbinfo.app_layers_enabled = enabled;
+                kbinfo.app_rules_format = info.format;
+            } catch (e) {
+                delete kbinfo.app_rules;
+                delete kbinfo.app_layers_enabled;
+                delete kbinfo.app_rules_format;
+                console.warn("App rules not available:", e);
+            }
+        }
+
         // Load fragment data (hardware detection and EEPROM selections)
         if (this.fragment.hasFragments(kbinfo)) {
             try {
@@ -257,6 +274,8 @@ export class KeyboardService {
         kbinfo.feature_flags3 = svilInfo[19] ?? 0;
         // [feature_flags4:1] (GET_INFO byte 21) after that; older firmware sends zero.
         kbinfo.feature_flags4 = svilInfo[20] ?? 0;
+        // [feature_flags5:1] (GET_INFO byte 22) after that; older firmware sends zero.
+        kbinfo.feature_flags5 = svilInfo[21] ?? 0;
         // The QMK keycode numbering the board uses; older firmware sends zeros.
         const keycodeVersion = Array.from((svilInfo as Uint8Array).slice(14, 17));
         kbinfo.keycode_version_reported = keycodeVersion.some(Boolean);
@@ -741,11 +760,29 @@ export class KeyboardService {
      * layer on the board shows its default, which needn't be layer 0.
      */
     async getLayerIndexes(kbinfo: KeyboardInfo): Promise<{ active: number; defaultLayer: number | null }> {
-        const masks = await this.getLayerStateMasks(kbinfo);
+        const masks = await this.getShownLayerMasks(kbinfo);
         return {
             active: this.getActiveLayerIndexFromMask(masks.active | (masks.default ?? 0)),
             defaultLayer: masks.default === null ? null : this.getActiveLayerIndexFromMask(masks.default),
         };
+    }
+
+    /**
+     * The layers keys use now, for showing: with app layers (GET_INFO byte 22 bit 0) a rule
+     * can turn layers on or off without touching the user's own layer state, so this reads
+     * APP_FOREGROUND STATUS; other firmware, or a failed read, uses 0x16. Never write these
+     * back: getLayerStateMasks is the user's own state, for read-modify-write.
+     */
+    async getShownLayerMasks(kbinfo: KeyboardInfo): Promise<{ active: number; default: number | null }> {
+        if (hasAppRules(kbinfo.feature_flags5)) {
+            try {
+                const s = await readAppForeground(this.usb);
+                return { active: s.layers, default: s.defaultState };
+            } catch (e) {
+                console.warn("App layers status not available; showing 0x16:", e);
+            }
+        }
+        return this.getLayerStateMasks(kbinfo);
     }
 
     /** Sets the live layer state. QMK doesn't save it. */

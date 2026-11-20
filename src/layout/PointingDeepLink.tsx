@@ -15,7 +15,7 @@ import { tuneKindFromSearch } from "@/lib/deepLinks";
  * Settings at that section, as do ?panel=firmware and ?panel=backups. ?panel=scanlab opens the Scan Lab and ?panel=pointing
  * the Pointing Devices panel (?panel=pointing-settings is the same, ?panel=pointing-automouse
  * scrolled to AutoMouse (pointing-advanced is its old name), ?panel=trackball with the Trackball sensors modal open), ?panel=keyboard the Standard
- * Keys panel. Once per page load.
+ * Keys panel, ?panel=app-layers (or the older ?panel=app-rules) the App Layers panel. Once per page load.
  */
 export default function PointingDeepLink() {
     const { keyboard } = useKeyboard();
@@ -27,8 +27,8 @@ export default function PointingDeepLink() {
         done.current = true;
         // The pointing panel, its old names, and the tuner modals: a modal opens over the panel the link lands on.
         const pointingPanel = panel === "pointing" || panel === "pointing-settings" || panel === "pointing-automouse" || panel === "pointing-advanced" || panel === "trackball";
-        if (panel === "scanlab" || pointingPanel || panel === "keyboard" || ["special", "mouse", "layers", "altrepeat", "more", "combos", "overrides", "leaders", "macros", "tapdances", "qmk", "oneshot"].includes(panel)) {
-            setActivePanel(pointingPanel ? "pointing" : panel);
+        if (panel === "scanlab" || pointingPanel || panel === "keyboard" || ["special", "mouse", "layers", "altrepeat", "more", "combos", "overrides", "leaders", "macros", "tapdances", "qmk", "oneshot", "app-rules", "app-layers"].includes(panel)) {
+            setActivePanel(pointingPanel ? "pointing" : panel === "app-rules" ? "app-layers" : panel);
             setPanelToGoBack(null);
             setItemToEdit(null);
             openDetails();

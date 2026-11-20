@@ -789,6 +789,26 @@ describe('KeyboardService', () => {
       expect(await keyboardService.getLayerIndexes({ feature_flags: 0 } as any)).toEqual({ active: 5, defaultLayer: null });
     });
 
+    it('shows the layers in use from APP_FOREGROUND STATUS on boards with app layers', async () => {
+      // STATUS: [0x40][op][status][app:4][ms:2][rule][front][on:2][off:2][own default:4][default:4][user:4][layers:4][flags]
+      const status = new Uint8Array(32);
+      status.set([0x40, 0, 0]);
+      status[19] = 0x02; // the rule's default layer: 1
+      status[23] = 0x01; // the user's own layers: 0 (raw 0x16 would say layer 0)
+      status[27] = 0x10; // the layers in use: 4 (the rule's)
+      mockUSB.sendSvil.mockResolvedValueOnce(status);
+      expect(await keyboardService.getLayerIndexes({ feature_flags: 0x40, feature_flags5: 1 } as any)).toEqual({ active: 4, defaultLayer: 1 });
+      expect(mockUSB.sendSvil).toHaveBeenLastCalledWith(0x40, [0], { uint8: true });
+      // A failed STATUS read falls back to 0x16.
+      mockUSB.sendSvil.mockResolvedValueOnce(new Uint8Array([0xff, 0, 0]))
+        .mockResolvedValueOnce(new Uint8Array([SvilUSB.CMD_SVIL_LAYER_STATE_GET, 0x20, 0, 0, 0, 0x08, 0, 0, 0]));
+      expect(await keyboardService.getLayerIndexes({ feature_flags: 0x40, feature_flags5: 1 } as any)).toEqual({ active: 5, defaultLayer: 3 });
+      // getLayerStateMasks (reorder's read-modify-write) stays on 0x16, the user's own state.
+      mockUSB.sendSvil.mockResolvedValueOnce(new Uint8Array([SvilUSB.CMD_SVIL_LAYER_STATE_GET, 0x01, 0, 0, 0, 0x01, 0, 0, 0]));
+      expect(await keyboardService.getLayerStateMasks({ feature_flags: 0x40, feature_flags5: 1 } as any)).toEqual({ active: 1, default: 1 });
+      expect(mockUSB.sendSvil).toHaveBeenLastCalledWith(SvilUSB.CMD_SVIL_LAYER_STATE_GET, [], { uint8: true });
+    });
+
     it('checks the default layer after setting it', async () => {
       const ok = new Uint8Array([SvilUSB.CMD_SVIL_DEFAULT_LAYER_SET, 0]);
       const state = (mask: number) => new Uint8Array([SvilUSB.CMD_SVIL_LAYER_STATE_GET, 0, 0, 0, 0, mask, 0, 0, 0]);

@@ -1,4 +1,5 @@
 import AltRepeatPanel from "./SecondarySidebar/Panels/AltRepeatPanel";
+import AppLayersPanel from "./SecondarySidebar/Panels/AppLayersPanel";
 import MorePanel from "./SecondarySidebar/Panels/MorePanel";
 import BasicKeyboards from "./SecondarySidebar/Panels/BasicKeyboards";
 import CombosPanel from "./SecondarySidebar/Panels/CombosPanel";
@@ -48,6 +49,7 @@ export const getPanelTitle = (panel: string | null | undefined, menus?: CustomUI
         more: "More",
         leaders: "Leader Sequences",
         layouts: "Layouts",
+        "app-layers": "App Layers",
         pointing: "Pointing Devices",
         settings: "Settings",
         scanlab: "Scan Lab",
@@ -75,7 +77,7 @@ export function PanelContent({ panel, horizontal = false, isPicker = false, tray
         layouts: LayoutsPanel, pointing: PointingPanel, qmk: QmkKeyPanel,
         oneshot: OneShotComposerPanel, special: SpecialKeysPanel, mouse: MousePanel,
         scanlab: ScanLabPanel, trackball: TrackballPanel, settings: SettingsPanel,
-        quickstart: QuickStartPanel,
+        quickstart: QuickStartPanel, "app-layers": AppLayersPanel,
     };
     if (panel === "keyboard") return <BasicKeyboards trayPortal={trayPortal} />;
     const Content = panels[panel as keyof typeof panels];

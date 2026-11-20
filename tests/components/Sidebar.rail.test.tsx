@@ -31,7 +31,9 @@ describe('the rail holds what is used while editing', () => {
         renderRail();
         const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
         for (const gone of ['Typing Behavior', 'Typing behavior', 'Hardware', 'Clusters']) expect(names).not.toContain(gone);
-        expect(names.indexOf('Overlay')).toBe(names.indexOf('Layouts') + 1);
+        // Layouts stands alone; Overlay is in the footer, between Manual (a link) and Settings.
+        const footer = [...document.querySelectorAll('[data-sidebar="menu"] [aria-label]')].map((el) => el.getAttribute('aria-label'));
+        expect(footer.slice(footer.indexOf('Layouts'))).toEqual(['Layouts', 'Quick Start', 'Manual', 'Overlay', 'Settings']);
     });
 
     it('has no About item: About is a card of Settings', () => {
@@ -40,6 +42,35 @@ describe('the rail holds what is used while editing', () => {
         expect(names).not.toContain('About');
         expect(screen.queryByRole('button', { name: 'About' })).toBeNull();
         expect(names.indexOf('Settings')).toBeGreaterThan(names.indexOf('Quick Start'));
+    });
+});
+
+describe('the editors under More', () => {
+    it('has no Overrides, Alt-Repeat or App Layers item on the rail', () => {
+        deepLink.keyboard = { name: 'demo', feature_flags5: 1, alt_repeat_keys: [{ keycode: 'KC_Z', alt_keycode: 'KC_Y' }] };
+        renderRail();
+        for (const gone of ['Overrides', 'Alt-Repeat', 'App Layers']) expect(screen.queryByRole('button', { name: gone })).toBeNull();
+        deepLink.keyboard = null;
+    });
+
+    it.each(['overrides', 'altrepeat', 'app-layers', 'more'])('marks More while %s is open', (panel) => {
+        panels.activePanel = panel;
+        panels.open = true;
+        renderRail();
+        expect(screen.getByRole('button', { name: 'More' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Combos' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it.each([['overrides', 'overrides'], ['altrepeat', 'altrepeat'], ['app-layers', 'app-layers'], ['app-rules', 'app-layers'], ['more', 'more']])('?panel=%s opens %s', (panel, opened) => {
+        deepLink.keyboard = { name: 'demo' };
+        _resetPointingDemoForTests();
+        window.history.replaceState(null, '', `/keybard/?panel=${panel}`);
+        render(<PointingDeepLink />);
+        expect(panels.setActivePanel).toHaveBeenCalledWith(opened);
+        expect(panels.openDetails).toHaveBeenCalled();
+        window.history.replaceState(null, '', '/');
+        _resetPointingDemoForTests();
+        deepLink.keyboard = null;
     });
 });
 

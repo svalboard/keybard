@@ -11,6 +11,8 @@ import { isUnusableTapdanceTerm, tapdanceInUse, usableTapdanceTerm } from "@/uti
 import { isOverrideEnabled, overrideOptionsFromFile } from '@/utils/key-override';
 import { importBalls, savedBalls } from "./pointing-look.service";
 import { NOT_LAYOUT_VALUES } from "../utils/touchpad-tuning";
+import { appLayersEnabledFromSvil, appRulesFromSvil, appRulesToSvil } from "./app-rules";
+import { ruleKey } from "../utils/app-rule-keys";
 
 // Default template for KBINFO if needed (simplified from SVALBOARD)
 const DEFAULT_KB_INFO: any = {
@@ -425,6 +427,13 @@ export class FileService {
             svil.oneshot = oneshot;
         }
 
+        // App rules, from a board that has them (read, so never a guess). The app key goes with
+        // each rule Keybard knows it for, since the board keeps only the 4-byte ID.
+        if (kbinfo.app_rules) {
+            svil.app_rules = appRulesToSvil(kbinfo.app_rules);
+            svil.app_layers_enabled = kbinfo.app_layers_enabled !== false;
+        }
+
         // Save resolved fragment selections for each instance (not just user selections)
         // This captures hardware-detected, EEPROM, or user-selected fragments
         if (kbinfo.composition?.instances && kbinfo.fragments) {
@@ -799,6 +808,13 @@ export class FileService {
         }
 
         kbinfo.settings = svil.settings || {};
+
+        // App rules: absent in files from boards without them, so nothing is imported then.
+        const appRules = appRulesFromSvil(svil.app_rules);
+        if (appRules) {
+            kbinfo.app_rules = appRules.map((rule) => (rule.key ? rule : { ...rule, key: ruleKey(rule) }));
+            kbinfo.app_layers_enabled = appLayersEnabledFromSvil(svil.app_layers_enabled);
+        }
 
         // Convert layout to keymap
         const km: number[][] = [];

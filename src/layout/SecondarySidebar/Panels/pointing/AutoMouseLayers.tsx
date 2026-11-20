@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Ban } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { LayerPill } from "@/components/LayerPill";
 import { svalService } from "@/services/sval.service";
 import type { KeyboardInfo } from "@/types/keyboard.types";
 import {
@@ -28,26 +27,17 @@ export function AutoMouseLayerPills({ keyboard, mask, onToggle }: { keyboard: Ke
                 const off = ((mask >> i) & 1) === 1;
                 const name = layerName(keyboard, i);
                 return (
-                    <button
+                    <LayerPill
                         key={i}
-                        type="button"
+                        name={name}
+                        state={off ? "off" : "neutral"}
                         aria-pressed={off}
                         aria-label={`Layer ${i}: Auto Mouse ${off ? "off" : "on"}`}
                         title={off ? `${name}: Auto Mouse is off. Click to turn it on` : `${name}: Auto Mouse works. Click to turn it off`}
                         onClick={() => onToggle(i)}
                         data-layer={i}
                         data-off={off ? 1 : 0}
-                        className={cn(
-                            "inline-flex min-h-7 items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap transition-colors",
-                            "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kb-ink",
-                            off
-                                ? "border-kb-warn-ink bg-kb-warn-bg text-kb-warn-ink hover:brightness-95"
-                                : "border-kb-gray-border bg-transparent text-kb-ink hover:bg-kb-gray-border/40",
-                        )}
-                    >
-                        {off && <Ban className="h-3 w-3" aria-hidden />}
-                        <span className={cn("select-none", off && "line-through")}>{name}</span>
-                    </button>
+                    />
                 );
             })}
         </div>

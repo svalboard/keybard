@@ -16,6 +16,7 @@ import { VARIABLE_LIMITS, ZERO_REPLACED_SETTINGS, ZERO_SETTINGS_RELEASE } from '
 import { HAND_KEYS, findMenuItem, hasScrollSpeed, moduleOf, scrollSpeedFromDpi, VIA_LEFT_SCROLL_SPEED, VIA_RIGHT_SCROLL_SPEED } from "../utils/pointing-settings";
 import { NOT_LAYOUT_VALUES } from "../utils/touchpad-tuning";
 import { usableTapdanceTerm } from "../utils/tapdance-term";
+import { APP_RULES_MAX, hasAppRules } from "./app-rules";
 
 export interface ImportReview {
     keyboard: KeyboardInfo;
@@ -162,6 +163,14 @@ export function prepareImport(file: KeyboardInfo, current?: KeyboardInfo): Impor
         catch { errors.push('The imported macros do not fit the keyboard’s macro buffer or contain invalid actions.'); }
     }
     restoreFragments(file, current, next, warnings);
+    // App rules replace the board's whole list, on a board that has them and whose rules were read.
+    if (file.app_rules) {
+        if (hasAppRules(current.feature_flags5) && current.app_rules) {
+            next.app_rules = structuredClone(file.app_rules.slice(0, APP_RULES_MAX));
+            next.app_layers_enabled = file.app_layers_enabled !== false;
+        }
+        else if (file.app_rules.length) unavailable.push('App rules');
+    }
     next.settings = { ...current.settings };
     for (const [id, value] of Object.entries(file.settings ?? {})) {
         // Settings the board's read missed are unread, not missing: the file's are kept, so they

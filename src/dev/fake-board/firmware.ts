@@ -11,7 +11,7 @@
 import {
     blankBoard, ALT_REPEAT_KEY_SIZE, COLS, COMBO_SIZE, CUSTOM_VALUE_IDS, FRAGMENT_MAX_INSTANCES, KEY_OVERRIDE_SIZE,
     LABEL_SIZE, LABEL_TYPE_COMBO, LAYERS, LEADER_SIZE, MACRO_BUFFER_SIZE, MACRO_BUFFER_SIZE_NO_COMBO_LABELS,
-    MACRO_COUNT, ROWS, TABLE_ENTRIES, TAP_DANCE_SIZE, type FakeBoardState,
+    MACRO_COUNT, ROWS, TABLE_ENTRIES, TAP_DANCE_SIZE, APP_RULES_RECORD_BYTES, type FakeBoardState,
 } from "./board";
 import {
     ChipModel, nearest, packPadFingers, packPadTouch, PAD_DEAD_ZONE_MM100, PAD_HEIGHT_MM100, PAD_SCROLL_MM100, PAD_TAP_MS, PAD_WIDTH_MM100, type ChipSettings,
@@ -69,6 +69,8 @@ export const FLAG4_SCROLL_SPEED = 0x20;
 export const FLAG4_TRACKPOINT_SPEED = 0x40;
 // flags4 bit 7: Auto Mouse layers (VIA 63 the mode, 64 the 16-bit mask of layers where it is off).
 export const FLAG4_AUTOMOUSE_LAYERS = 0x80;
+// flags5 (GET_INFO byte 22) bit 0: app rules (0x40 APP_FOREGROUND, 0x41 APP_RULES).
+export const FLAG5_APP_RULES = 0x01;
 
 /** What a half's pointing slot holds (the 0x2C reply's detected module). */
 export type FakeModule = "pmw3389" | "azoteq" | "trackpoint" | "none";
@@ -164,6 +166,10 @@ export interface FakeFirmwareOptions {
     scrollSpeed?: boolean;
     /** Firmware with Auto Mouse layers (VIA 63 and 64, GET_INFO byte 21 bit 7). Default true. */
     autoMouseLayers?: boolean;
+    /** Firmware with app rules (0x40, 0x41, GET_INFO byte 22 bit 0). Default true. */
+    appRules?: boolean;
+    /** The app rules record format the firmware runs: 2 (default), or 1 (the first app rules firmware: 24-byte rules, read as they are). */
+    appRulesFormat?: 1 | 2;
     /** A PMW3389 trackball on the left half and the touchpad on the right (with touchpad). Default false. */
     leftTrackball?: boolean;
     /** An Azoteq touchpad on each half (0x2C, 0x18), instead of no pointing module. Default false. */
@@ -256,6 +262,15 @@ export class FakeSvalFirmware {
     readonly padGestures: boolean;
     readonly scrollSpeed: boolean;
     readonly autoMouseLayers: boolean;
+    readonly appRules: boolean;
+    readonly appRulesFormat: 1 | 2;
+    /** App rules: the edit copy BEGIN fills and WRITE changes; COMMIT puts it in use. */
+    private appRulesStaging = new Uint8Array(APP_RULES_RECORD_BYTES);
+    /** Every app rules request op (0x41), in order, for tests. */
+    appRulesOps: number[] = [];
+    /** The app in front (APP_FOREGROUND SET) and when it expires. */
+    appForeground = 0;
+    private appForegroundUntil = 0;
     /** Auto Mouse layers: the mode (0 Everywhere, 1 Only on Selected Layers) and the mask of layers where it is off. */
     autoMouseLayersMode = 0;
     autoMouseLayerMask = 0;
@@ -352,6 +367,8 @@ export class FakeSvalFirmware {
         this.padGestures = options.padGestures ?? true;
         this.scrollSpeed = options.scrollSpeed ?? true;
         this.autoMouseLayers = options.autoMouseLayers ?? true;
+        this.appRules = options.appRules ?? true;
+        this.appRulesFormat = options.appRulesFormat ?? 2;
         const padBoard = options.touchpad ?? false;
         this.modules = options.modules
             ?? (padBoard ? { left: options.leftTrackball ? "pmw3389" : "azoteq", right: "azoteq" } : { left: "none", right: "none" });
@@ -1127,6 +1144,7 @@ export class FakeSvalFirmware {
                     | (this.debugConsole ? FLAG4_DEBUG_CONSOLE : 0) | FLAG4_POINTING_SENSOR | (this.scrollSpeed ? FLAG4_SCROLL_SPEED : 0)
                     | (this.modules.left === "trackpoint" || this.modules.right === "trackpoint" ? FLAG4_TRACKPOINT_SPEED : 0)
                     | (this.autoMouseLayers ? FLAG4_AUTOMOUSE_LAYERS : 0);
+                if (length > 22) data[22] = this.appRules ? FLAG5_APP_RULES : 0;
                 break;
             }
             case 0x2a: // STORAGE_RESET_CLEAR
@@ -1372,6 +1390,17 @@ export class FakeSvalFirmware {
                     data[4] = this.debugEnable ? 1 : 0;
                 }
                 break;
+            case 0x40: // APP_FOREGROUND (app_rules_kb.c)
+            case 0x41: // APP_RULES
+                if (!this.appRules) {
+                    data[1] = SVAL_CMD_ERROR;
+                    break;
+                }
+                if (length > 3) {
+                    if (cmd === 0x40) this.appForegroundCommand(data.subarray(2), length - 2);
+                    else this.appRulesCommand(data.subarray(2), length - 2);
+                }
+                break;
             case 0x3c: // TYPING_PAUSE
                 if (!this.typingPause) {
                     data[1] = SVAL_CMD_ERROR;
@@ -1383,6 +1412,199 @@ export class FakeSvalFirmware {
                 // Unknown command (context layers 0x26-0x29 included: not modeled), and
                 // SIDE (0x33), which only either-hand builds have
                 data[1] = SVAL_CMD_ERROR;
+        }
+    }
+
+    // ---- keyboards/svalboard/app_rules_kb.c ------------------------------------
+
+    /** The rules' offsets in a valid format 2 record (app_rules.c), upgrading a format 1 record first. */
+    private appRuleOffsets(record: Uint8Array): number[] {
+        if (record[0] === 1 && this.appRulesFormat === 1) return Array.from({ length: Math.min(record[1], 64) }, (_, i) => 4 + i * 24);
+        if (record[0] === 1) this.upgradeAppRules(record);
+        if (record[0] !== 2 || record[1] > 64) return [];
+        const out: number[] = [];
+        let o = 4;
+        for (let i = 0; i < record[1]; i++) {
+            if (o + 12 > record.length || record[o + 11] > 64 || o + 12 + record[o + 11] > record.length) return [];
+            out.push(o);
+            o += 12 + record[o + 11];
+        }
+        return out;
+    }
+
+    private appRulesUsed(record: Uint8Array): number {
+        const offs = this.appRuleOffsets(record);
+        if (!offs.length) return record[0] === 2 ? 4 : 0;
+        const last = offs[offs.length - 1];
+        return last + 12 + record[last + 11];
+    }
+
+    /** sval_app_rules_upgrade: a format 1 record (24-byte rules, 13-byte labels) as format 2, App Layers on. */
+    private upgradeAppRules(record: Uint8Array): void {
+        const old = record.slice();
+        const count = Math.min(old[1], 64);
+        const out = new Uint8Array(record.length);
+        out[0] = 2; out[1] = count;
+        let o = 4;
+        const fnv = (bytes: Uint8Array) => {
+            let h = 0x811c9dc5;
+            for (const b of bytes) h = Math.imul(h ^ (b >= 65 && b <= 90 ? b + 32 : b), 0x01000193) >>> 0;
+            return h || 1;
+        };
+        for (let i = 0; i < count; i++) {
+            const s = 4 + i * 24;
+            const raw = old.subarray(s + 11, s + 24);
+            const end = raw.indexOf(0);
+            const label = end < 0 ? raw : raw.subarray(0, end);
+            const site = new Uint8Array([...new TextEncoder().encode("site:"), ...label]);
+            const long = label[0] === 0xe2 && label[1] === 0x80 && label[2] === 0xa6; // "…"
+            out.set(old.subarray(s, s + 10), o);
+            out[o + 10] = (old[s + 10] & 1) | (label.length && (fnv(site) === le32(old, s) || long) ? 2 : 0);
+            out[o + 11] = label.length;
+            out.set(label, o + 12);
+            o += 12 + label.length;
+        }
+        record.set(out);
+    }
+
+    /** The first rule that is on with the app's ID, or -1; none while App Layers is off. */
+    appRuleFor(id: number): number {
+        if (!id) return -1;
+        const r = this.state.appRules;
+        if (r[2] & 1) return -1;
+        const offs = this.appRuleOffsets(r);
+        for (let i = 0; i < offs.length; i++) if (!(r[offs[i] + 10] & 1) && le32(r, offs[i]) === id >>> 0) return i;
+        return -1;
+    }
+
+    private appFlagsOff(): number {
+        return this.state.appRules[0] === 2 && (this.state.appRules[2] & 1) ? 8 : 0;
+    }
+
+    private appForegroundLive(): number {
+        return this.appForeground && this.timer() < this.appForegroundUntil ? this.appForeground : 0;
+    }
+
+    /** APP_FOREGROUND, data after [0xDF][0x40]: [op] ... -> [op][status] ... */
+    private appForegroundCommand(d: Uint8Array, length: number): void {
+        const op = d[0];
+        if (op === 1) { // SET [id:4][lifetime s]
+            if (length < 6) { d[1] = 3; return; }
+            const id = le32(d, 1);
+            const lifetime = d[5] === 0 ? 15 : Math.min(d[5], 60);
+            this.appForeground = id;
+            this.appForegroundUntil = this.timer() + lifetime * 1000;
+            d.fill(0, 1, length);
+            const rule = this.appRuleFor(id);
+            d[2] = rule < 0 ? 0xff : rule;
+            d[3] = (rule < 0 ? 0 : 1) | this.appFlagsOff();
+            return;
+        }
+        if (op === 2) { // CLEAR
+            this.appForeground = 0;
+            d.fill(0, 1, length);
+            return;
+        }
+        if (op === 0) { // STATUS
+            if (length < 31) { d[1] = 3; return; }
+            d.fill(0, 1, length);
+            const id = this.appForegroundLive();
+            const rule = this.appRuleFor(id);
+            const r = this.state.appRules;
+            const o = rule < 0 ? 0 : this.appRuleOffsets(r)[rule];
+            put32(d, 2, id);
+            put16(d, 6, id ? Math.min(0xffff, this.appForegroundUntil - this.timer()) : 0);
+            d[8] = rule < 0 ? 0xff : rule;
+
+            // The mouse layer (15) is Auto Mouse's: the board ignores mask bits for it.
+            const keep = ~(1 << 15) & 0xffff;
+            const on = rule >= 0 ? (r[o + 6] | (r[o + 7] << 8)) & keep : 0;
+            const off = rule >= 0 ? (r[o + 8] | (r[o + 9] << 8)) & keep : 0;
+            put16(d, 10, on);
+            put16(d, 12, off);
+            const own = (1 << this.state.defaultLayer) >>> 0;
+            const ruleDefault = rule >= 0 && r[o + 4] !== 0xff ? (1 << r[o + 4]) >>> 0 : own;
+            const front = rule >= 0 && r[o + 5] !== 0xff && !((off >> r[o + 5]) & 1) ? r[o + 5] : 0xff;
+            d[9] = front;
+            put32(d, 14, own);
+            put32(d, 18, ruleDefault);
+            put32(d, 22, this.layerState);
+            put32(d, 26, ((((this.layerState | on) & ~off) | (front === 0xff ? 0 : 1 << front)) >>> 0));
+            d[30] = (rule < 0 ? 0 : 1 | (ruleDefault !== own ? 2 : 0)) | this.appFlagsOff();
+            return;
+        }
+        d.fill(0, 1, length);
+        d[1] = 1;
+    }
+
+    /** APP_RULES, data after [0xDF][0x41]: [op] ... -> [op][status] ... */
+    private appRulesCommand(d: Uint8Array, length: number): void {
+        const op = d[0];
+        this.appRulesOps.push(op);
+        const rules = this.state.appRules;
+        switch (op) {
+            case 0: // INFO
+                if (this.appRulesFormat === 1) { // the first app rules firmware's INFO
+                    if (length < 10) { d[1] = 3; return; }
+                    d.fill(0, 1, length);
+                    d[2] = 1; d[3] = 64; d[4] = 24;
+                    d[5] = rules[0] === 1 ? Math.min(rules[1], 64) : 0;
+                    put16(d, 6, 1540);
+                    d[8] = 48;
+                    d[9] = LAYERS;
+                    return;
+                }
+                if (length < 14) { d[1] = 3; return; }
+                d.fill(0, 1, length);
+                d[2] = 2; d[3] = 64; d[4] = 12;
+                d[5] = this.appRuleOffsets(rules).length;
+                put16(d, 6, APP_RULES_RECORD_BYTES);
+                d[8] = 48;
+                d[9] = LAYERS;
+                put16(d, 10, this.appRulesUsed(rules));
+                d[12] = 64;
+                d[13] = rules[0] === 2 ? rules[2] & 1 : 0;
+                return;
+            case 1: // READ [offset:2][len]
+            case 2: { // WRITE [offset:2][len][bytes]
+                if (length < 4) { d[1] = 3; return; }
+                const off = le16(d, 1);
+                const len = d[3];
+                if (len > 48 || off + len > APP_RULES_RECORD_BYTES) { d[1] = 1; return; }
+                if (op === 2) {
+                    if (length < 4 + len) { d[1] = 3; return; }
+                    this.appRulesStaging.set(d.subarray(4, 4 + len), off);
+                    d[1] = 0;
+                    return;
+                }
+                if (length < 5 + len) { d[1] = 3; return; }
+                d[4] = len;
+                d[3] = off >> 8;
+                d[2] = off & 0xff;
+                d[1] = 0;
+                d.set(rules.subarray(off, off + len), 5);
+                return;
+            }
+            case 3: // BEGIN
+                this.appRuleOffsets(rules); // a format 1 record is upgraded first
+                this.appRulesStaging.set(rules);
+                d[1] = 0;
+                return;
+            case 4: { // COMMIT
+                if (length < 3) { d[1] = 3; return; }
+                const s = this.appRulesStaging;
+                const blank = s[0] === 0 && s[1] === 0;
+                if (!blank && (s[0] !== 2 || s[1] > 64 || this.appRuleOffsets(s).length !== s[1])) { d[1] = 4; return; }
+                // sval_app_rules_tidy: the header's spare bits and the bytes past the rules
+                if (blank) s.fill(0); else { s[2] &= 1; s[3] = 0; s.fill(0, this.appRulesUsed(s)); }
+                rules.set(s);
+                this.changed();
+                d[1] = 0;
+                d[2] = s[1];
+                return;
+            }
+            default:
+                d[1] = 1;
         }
     }
 

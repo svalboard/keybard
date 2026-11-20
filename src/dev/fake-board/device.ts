@@ -28,6 +28,8 @@ export interface FakeSvalboardOptions {
     /** Firmware with Scroll speed (VIA 61 and 62). Default true. */
     scrollSpeed?: boolean;
     autoMouseLayers?: boolean;
+    /** Firmware with app rules (0x40, 0x41). Default true. */
+    appRules?: boolean;
     /** A PMW3389 trackball on the left half, the touchpad on the right. Default false. */
     leftTrackball?: boolean;
     /** An Azoteq touchpad on each half. Default false. */
@@ -192,6 +194,7 @@ export class FakeSvalboardDevice extends EventTarget {
             padGestures: options.padGestures ?? true,
             scrollSpeed: options.scrollSpeed ?? true,
             autoMouseLayers: options.autoMouseLayers ?? true,
+            appRules: options.appRules ?? true,
             leftTrackball: options.leftTrackball ?? false,
             touchpad: options.touchpad ?? false,
             modules: options.modules,

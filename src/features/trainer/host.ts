@@ -199,6 +199,17 @@ export function useHost({ overlay = false, background = false }: { overlay?: boo
     return { state, error, command, configure, busy, connect, local, build };
 }
 
+/**
+ * Where to reach the Keybard Overlay app when it is already in use: '' when it serves this
+ * Keybard, HOST_ORIGIN for a hosted page the user connected to it. null otherwise, so
+ * nothing probes loopback on its own.
+ */
+export function hostBaseInUse(): string | null {
+    const local = servedByHost() || (typeof window !== 'undefined' && !!window.__keybardNativeState);
+    if (local) return '';
+    return PARANOID || !rememberedRemote() ? null : HOST_ORIGIN;
+}
+
 const HOST_REFRESH_DELAY_MS = 500;
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let refreshToken = '';

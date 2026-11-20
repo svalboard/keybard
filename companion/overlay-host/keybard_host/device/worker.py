@@ -3,8 +3,11 @@ from threading import Event, Lock
 import time
 from PySide6.QtCore import QThread, Signal
 from .protocol import (SvalReader, ProtocolError, Cancelled, candidates, hid_backend, DEFAULT_LAYER_STATE_FLAG,
-                       POINTING_MOTION_FLAG2, POINTING_MOTION_READERS_FLAG2, UnsupportedCommand)
+                       POINTING_MOTION_FLAG2, POINTING_MOTION_READERS_FLAG2, UnsupportedCommand,
+                       APP_STATUS_NOT_USB_HALF)
 from .schedule import PollScheduler
+from .app_sender import AppSender
+from ..site_rules import site_rules
 
 
 class DeviceWorker(QThread):
@@ -33,6 +36,16 @@ class DeviceWorker(QThread):
         self.press_generation = 0
         self.pointing_enabled = False
         self.pointing_watch = False
+        # App rules: the ID of the app in front (None until the Host knows it), set by the Host.
+        # app_rules is True while this connection's board takes it (GET_INFO fifth feature byte).
+        self.foreground_id = None
+        self.app_rules = False
+        # Site rules: [(site, app ID)] among the board's rules (site_rules.py), read at connect,
+        # after a layout refresh (Keybard saved something) and every RULES_INTERVAL seconds.
+        self.sites = []
+        # App Layers on the board (its master switch, read with the rules). While off the board
+        # applies no rule: the Host reads no addresses and sends no foreground app.
+        self.app_layers_on = True
         # The read loop's clock and sleep; tests drive them with a fake clock.
         self.clock = time.monotonic
         self.wait_for_wake = self.wake_event.wait
@@ -68,6 +81,40 @@ class DeviceWorker(QThread):
         self.wake_event.set()
         return generation
 
+    def set_foreground(self, app_id):
+        """The app in front changed (an app ID, 0 for none). Sent at once to a board with app rules."""
+        if app_id != self.foreground_id:
+            self.foreground_id = app_id
+            if self.app_rules: self.wake_event.set()
+
+    def send_foreground(self, reader, sender, now):
+        """Tell the board the app in front, if it's due. Returns False once this connection
+        should stop sending: the board refuses the command or is the half without USB."""
+        app_id = self.foreground_id
+        if not sender.due(app_id, now): return True
+        try:
+            status, _rule, _flags = reader.app_foreground(app_id)
+        except UnsupportedCommand:
+            return False
+        if status == APP_STATUS_NOT_USB_HALF: return False
+        sender.sent(app_id, now, accepted=status == 0)
+        return True
+
+    RULES_INTERVAL = 5.0
+
+    def read_sites(self, reader):
+        """Read the board's rules for their sites. A failed read keeps the last ones."""
+        try: record = reader.app_rules_read()
+        except (UnsupportedCommand, ProtocolError): return
+        self.app_layers_on, self.sites = bool(record.enabled), site_rules(record.rules)
+
+    def clear_foreground(self, reader):
+        """The Host is leaving this board: say no app is in front, so its rules let go now
+        rather than when the lifetime runs out. Best effort, even while stopping."""
+        reader.cancelled = lambda: False
+        try: reader.app_clear()
+        except (OSError, ValueError, ProtocolError, Cancelled): pass
+
     def stop(self):
         self.stop_event.set()
         self.wake_event.set()
@@ -90,6 +137,7 @@ class DeviceWorker(QThread):
         retry = .5
         while not self.stop_event.is_set():
             device = None
+            reader = sender = None
             try:
                 self.status.emit("Connecting…")
                 serial = self.selected.get("serial_number")
@@ -104,10 +152,14 @@ class DeviceWorker(QThread):
                 unavailable_generation = None
                 version, uid = reader.info()
                 self.expected_uid = uid
+                sender = AppSender()
+                self.app_rules = reader.app_rules()
                 self.reload_event.set()
                 refresh_after, refresh_failures = 0.0, 0
                 pointing_next, pointing_supported = 0.0, True
                 settle_next = 0.0
+                rules_next = 0.0
+                sending = True  # App Layers was on at the last foreground send
                 schedule = PollScheduler(self.clock())
                 retry = .5
                 while not self.stop_event.is_set():
@@ -139,6 +191,7 @@ class DeviceWorker(QThread):
                             self.refresh_event.set()
                         else:
                             refresh_failures = 0
+                            rules_next = 0.0
                             reader.checkpoint()
                             self.profile.emit(profile)
                             schedule.read_now(self.clock())
@@ -183,8 +236,17 @@ class DeviceWorker(QThread):
                             pointing_supported = False  # older firmware: still devices, nothing said
                         if motion is not None:
                             self.pointing.emit(motion)
+                    if self.app_rules and self.clock() >= rules_next:
+                        rules_next = self.clock() + self.RULES_INTERVAL
+                        self.read_sites(reader)
+                    if self.app_rules and self.app_layers_on:
+                        if not sending: sender.tried_id = None  # back on: say the app in front at once
+                        self.app_rules = self.send_foreground(reader, sender, self.clock())
+                    sending = self.app_layers_on
                     # Sleep until the next read is due, or a new plan, reload, refresh or stop.
                     wake_at = schedule.next_at
+                    if self.app_rules: wake_at = min(wake_at, rules_next)
+                    if self.app_rules and self.app_layers_on: wake_at = min(wake_at, sender.next_at)
                     if (self.pointing_enabled or watching) and pointing_supported: wake_at = min(wake_at, pointing_next)
                     if reader.pointing_watching() and not self.refresh_event.is_set(): wake_at = min(wake_at, settle_next)
                     if self.refresh_event.is_set(): wake_at = min(wake_at, refresh_after)
@@ -195,6 +257,11 @@ class DeviceWorker(QThread):
             except (OSError, ValueError, ProtocolError) as exc:
                 self.status.emit(f"Disconnected · {exc} · retrying")
             finally:
+                if self.app_rules and sender is not None and sender.sent_id is not None and self.stop_event.is_set():
+                    self.clear_foreground(reader)
+                self.app_rules = False
+                self.sites = []
+                self.app_layers_on = True
                 if device is not None:
                     try:
                         device.close()

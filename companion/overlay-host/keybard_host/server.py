@@ -11,6 +11,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
 from .build import build_info
+from .foreground import apps_snapshot
 
 
 class LocalServer(ThreadingHTTPServer):
@@ -75,7 +76,7 @@ def load_paranoid_page(assets):
     return data.replace(b'<html lang="en">', b'<html lang="en" data-keybard-host="true">', 1)
 
 
-def make_server(state, assets, dispatch, port=0, remote_origins=REMOTE_ORIGINS, paranoid=False, page=None):
+def make_server(state, assets, dispatch, port=0, remote_origins=REMOTE_ORIGINS, paranoid=False, page=None, apps=apps_snapshot):
     # In paranoid mode `page` is the verified page bytes; nothing else is served.
     remote_origins = frozenset(remote_origins)
     # Which release this is and which Keybard it serves, so Keybard can tell the user.
@@ -141,6 +142,12 @@ def make_server(state, assets, dispatch, port=0, remote_origins=REMOTE_ORIGINS, 
             path = urlsplit(self.path)
             if not (self.api_ok() if path.path.startswith('/api/host/') else self.origin_ok()):
                 return self.reply({'error': 'Local origin required'}, 403)
+            if path.path == '/api/host/apps':
+                # App rules: the app in front and the apps with windows, for Keybard's app picker.
+                # Which apps someone runs is private, so this also needs the session token.
+                if not hmac.compare_digest(self.headers.get('X-Keybard-Token', ''), state.token):
+                    return self.reply({'error': 'Local host authorization required'}, 403)
+                return self.reply(apps())
             if path.path == '/api/host/bootstrap': return self.reply(dict(token=state.token, apiVersion=1, paranoid=paranoid, **build))
             if path.path == '/api/host/state':
                 query = parse_qs(path.query)

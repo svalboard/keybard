@@ -60,10 +60,9 @@ describe('the rail while a binding editor is open', () => {
     });
 
     it('does not navigate from covered rail items', () => {
-        board = withEntries;
         renderRail();
         openEditor('combos', 1);
-        for (const name of ['Combos', 'Overrides', 'Alt-Repeat', 'Leaders', 'Layouts', 'Overlay', 'Quick Start', 'Settings']) {
+        for (const name of ['Combos', 'More', 'Leaders', 'Layouts', 'Overlay', 'Quick Start', 'Settings']) {
             fireEvent.click(rail(name));
             expect(panels.itemToEdit).toBe(1);
             expect(panels.activePanel).toBe('combos');
@@ -86,8 +85,8 @@ describe('the rail while a binding editor is open', () => {
 
     it('navigates as before when no editor is open', () => {
         renderRail();
-        fireEvent.click(rail('Overrides'));
-        expect(panels.activePanel).toBe('overrides');
+        fireEvent.click(rail('More'));
+        expect(panels.activePanel).toBe('more');
         fireEvent.click(rail('Pointing Devices'));
         expect(panels.activePanel).toBe('pointing');
         expect(panels.pickerMode).toBe('keyboard');
@@ -117,7 +116,7 @@ describe('the rail while a binding editor is open', () => {
         expect(nudged).toHaveBeenCalledTimes(1);
         expect(panels.itemToEdit).toBe(0);
         expect(panels.activePanel).toBe('macros');
-        for (const name of ['Combos', 'Overrides', 'Layouts', 'Settings']) {
+        for (const name of ['Combos', 'More', 'Layouts', 'Settings']) {
             expect(item(name)).toHaveAttribute('data-spotlight', 'cover');
             expect(item(name)).toHaveAttribute('inert');
         }
@@ -133,51 +132,46 @@ describe('the rail while a binding editor is open', () => {
     });
 });
 
-const withEntries = { alt_repeat_keys: [{ keycode: 'KC_NO', alt_keycode: 'KC_NO' }, { keycode: 'KC_Z', alt_keycode: 'KC_Y' }] };
-const emptySlots = { alt_repeat_keys: [{ keycode: 'KC_NO', alt_keycode: 'KC_NO' }] };
-
-describe('Alt-Repeat placement in the rail', () => {
+describe('More in the rail', () => {
     const railNames = () => [...document.querySelectorAll('[data-sidebar="menu"] button[aria-label]')].map(b => b.getAttribute('aria-label'));
 
-    it('waits under More when the board has no entries, also while an editor is open', () => {
-        board = emptySlots;
+    it('orders the binding group Combos, Leaders, More, with no Overrides or Alt-Repeat item', () => {
+        board = { alt_repeat_keys: [{ keycode: 'KC_Z', alt_keycode: 'KC_Y' }] };
         renderRail();
-        expect(screen.queryByRole('button', { name: 'Alt-Repeat' })).toBeNull();
-        expect(rail('More')).toBeInTheDocument();
-        openEditor('combos', 0);
-        expect(screen.queryByRole('button', { name: 'Alt-Repeat' })).toBeNull();
+        const names = railNames().filter((n) => ['Combos', 'Leaders', 'Overrides', 'Alt-Repeat', 'More'].includes(n ?? ''));
+        expect(names).toEqual(['Combos', 'Leaders', 'More']);
     });
 
-    it('opens More, which leads to the Alt-Repeat panel', () => {
+    it('opens More', () => {
         renderRail();
         fireEvent.click(rail('More'));
         expect(panels.activePanel).toBe('more');
-        expect(screen.queryByRole('button', { name: 'Alt-Repeat' })).toBeNull();
     });
 
-    it('shows Alt-Repeat in the rail, with no More, once the board has entries', () => {
-        board = withEntries;
+    it('goes back to the list from an editor under More', () => {
         renderRail();
-        expect(screen.queryByRole('button', { name: 'More' })).toBeNull();
-        const names = railNames();
-        expect(names.indexOf('Alt-Repeat')).toBe(names.indexOf('Overrides') + 1);
-        expect(names.indexOf('Combos')).toBeLessThan(names.indexOf('Leaders'));
-        fireEvent.click(rail('Alt-Repeat'));
-        expect(panels.activePanel).toBe('altrepeat');
+        act(() => { panels.setActivePanel('overrides'); panels.openDetails(); });
+        expect(rail('More')).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(rail('More'));
+        expect(panels.activePanel).toBe('more');
     });
 
-    it('orders the binding group Combos, Leaders, Overrides, More', () => {
+    it('lifts More as the origin while an override or alt-repeat entry is edited', () => {
         renderRail();
-        const names = railNames().filter((n) => ['Combos', 'Leaders', 'Overrides', 'More'].includes(n ?? ''));
-        expect(names).toEqual(['Combos', 'Leaders', 'Overrides', 'More']);
-    });
-
-    it('keeps the Alt-Repeat panel and editor open when reached from More', () => {
-        renderRail();
-        act(() => { panels.setActivePanel('altrepeat'); panels.openDetails(); });
-        expect(panels.activePanel).toBe('altrepeat');
-        openEditor('altrepeat', 2);
-        expect(panels.activePanel).toBe('altrepeat');
-        expect(panels.itemToEdit).toBe(2);
+        for (const [panel, index] of [['overrides', 1], ['altrepeat', 2]] as const) {
+            act(() => { panels.setActivePanel(panel); panels.openDetails(); });
+            openEditor(panel, index);
+            const more = rail('More').closest('li')!;
+            expect(more).toHaveAttribute('data-spotlight', 'origin');
+            expect(more).not.toHaveAttribute('inert');
+            const nudged = vi.fn();
+            window.addEventListener('keybard:binding-spotlight-nudge', nudged);
+            fireEvent.click(rail('More'));
+            window.removeEventListener('keybard:binding-spotlight-nudge', nudged);
+            expect(nudged).toHaveBeenCalledTimes(1);
+            expect(panels.activePanel).toBe(panel);
+            expect(panels.itemToEdit).toBe(index);
+            act(() => panels.handleCloseEditor());
+        }
     });
 });

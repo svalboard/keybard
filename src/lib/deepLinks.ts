@@ -32,8 +32,8 @@
  *   ?fakeBoard=legends is this firmware with a few digit and punctuation keys
  *   wrapped in a modifier, a mod-tap and a layer-tap, some in combos (the
  *   shifted-legends checks, LEGEND_SEED_KEYS in seed.ts; fresh on every load).
- *   ?fakeBoard=altrepeat is this firmware with one Alt-Repeat entry, so the rail
- *   shows Alt-Repeat as its own item (fresh on every load).
+ *   ?fakeBoard=altrepeat is this firmware with one Alt-Repeat entry, to review the
+ *   Alt-Repeat panel with an entry (under the rail's More; fresh on every load).
  *   ?fakeBoard=leader0 is firmware from before x4.3.3 whose settings reset
  *   stored a leader timeout of 0 (fresh on every load).
  *   Its settings stay in this browser across reloads (except turbo6 and leader0).

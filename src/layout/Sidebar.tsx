@@ -2,7 +2,6 @@ import { ArrowLeft, BookOpen, Ellipsis, Keyboard, ListOrdered, LucideIcon, Mouse
 import KeybardLogo from "@/components/icons/KeybardLogo";
 import PointingDeviceBall01Icon from "@/components/icons/PointingDeviceBall01Icon";
 import LayoutLayersIcon from "@/components/icons/LayoutLayersIcon";
-import AltRepeatArrowsIcon from "@/components/icons/AltRepeatArrowsIcon";
 import GraduationCapIcon from "@/components/icons/GraduationCapIcon";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { OverlayDialog, overlayRequested } from "@/features/trainer/OverlayDialog";
@@ -13,7 +12,6 @@ import { isExcludedMenu, getIconForMenu } from "@/constants/custom-ui-exclusions
 
 import LayersDefaultIcon from "@/components/icons/LayersDefault";
 import MacrosIcon from "@/components/icons/MacrosIcon";
-import OverridesIcon from "@/components/icons/Overrides";
 import TapdanceIcon from "@/components/icons/Tapdance";
 import Logo from "@/components/Logo";
 import ViewfinderMark from "@/components/icons/ViewfinderMark";
@@ -33,7 +31,7 @@ import { MANUAL_URL } from "@/lib/manual";
 import { requestSettingsSection, settingsSectionForPanel } from "@/layout/SecondarySidebar/Panels/settings/anchor";
 import { useFirmwareUpdates } from "@/features/firmware/FirmwareUpdateProvider";
 import { bindingEditorKind, currentRailMode, isBindingEditorOpen, modalRailExitLabel, pickerCategoryForRail, effectivePickerMode, nudgeBindingEditor, reviewChoice, RAIL_BARS, RAIL_BAR_PARAM, usablePickerCategories } from "@/lib/bindingSpotlight";
-import { ALT_REPEAT_PANEL, hasAltRepeatEntries, MORE_PANEL } from "@/lib/altRepeatVisibility";
+import { MORE_PANEL, railPanelFor } from "@/lib/morePanel";
 
 // --- Constants ---
 const MENU_ITEM_GAP_PX = 42; // Matches Gap-4 (16px) + Button Height (26px)
@@ -82,32 +80,29 @@ export const primarySidebarItems: SidebarItem[] = [
 const SHOW_LEADERS = true;
 
 /**
- * The binding group of the rail: Combos, Leaders, Overrides. Alt-Repeat is the last item when the board has
- * Alt-Repeat entries; otherwise More is, and Alt-Repeat waits inside it. Typing behavior is set up once, so it
- * lives in Settings.
+ * The binding group of the rail: Combos, Leaders, More. More holds the editors most people never need
+ * (Overrides, Alt-Repeat and, on firmware with app rules, App Layers; see MorePanel), and stays marked while
+ * one of them is open. Typing behavior is set up once, so it lives in Settings.
  */
-export function featureSidebarItemsFor(hasAltRepeat: boolean): SidebarItem[] {
-    return [
-        { title: "Combos", url: "combos", icon: ComboIcon },
-        ...(SHOW_LEADERS ? [{ title: "Leaders", url: "leaders", icon: ListOrdered }] : []),
-        { title: "Overrides", url: "overrides", icon: OverridesIcon },
-        hasAltRepeat
-            ? { title: "Alt-Repeat", url: ALT_REPEAT_PANEL, icon: AltRepeatArrowsIcon }
-            : { title: "More", url: MORE_PANEL, icon: Ellipsis },
-    ];
-}
-
-// Hardware (clusters, pointing devices, ball color) is set up once, so it lives in Settings.
-const layoutSidebarItems: SidebarItem[] = [
-    { title: "Layouts", url: "layouts", icon: LayoutLayersIcon },
-    { title: "Overlay", url: "trainer", icon: GraduationCapIcon },
+export const featureSidebarItems: SidebarItem[] = [
+    { title: "Combos", url: "combos", icon: ComboIcon },
+    ...(SHOW_LEADERS ? [{ title: "Leaders", url: "leaders", icon: ListOrdered }] : []),
+    { title: "More", url: MORE_PANEL, icon: Ellipsis },
 ];
 
-const footerItems: SidebarItem[] = [
+// Layouts stands alone. Hardware (clusters, pointing devices, ball color) is set up once, so it lives in Settings.
+export const layoutSidebarItems: SidebarItem[] = [
+    { title: "Layouts", url: "layouts", icon: LayoutLayersIcon },
+];
+
+// Help and the desktop overlay, with Settings last.
+export const footerItems: SidebarItem[] = [
     { title: "Quick Start", url: "quickstart", icon: Rocket },
     // The manual is the Keybard section of the docs site, opened in a new tab by the
     // person's click (Keybard Paranoid too: the page itself requests nothing).
     { title: "Manual", url: "manual", icon: BookOpen, href: MANUAL_URL },
+    // The desktop overlay is a separate app: the item opens a small dialog, not a panel.
+    { title: "Overlay", url: "trainer", icon: GraduationCapIcon },
     { title: "Settings", url: "settings", icon: Settings },
 ];
 
@@ -266,7 +261,7 @@ const AppSidebar = () => {
         setSwapped(true);
     }
     const railSpotlight = (url: string): RailSpotlight | undefined =>
-        !editing || railModal ? undefined : railCollapse ? "cover" : pickerCategoryForRail(url, activePanel) ? "lift" : url === activePanel ? "origin" : "cover";
+        !editing || railModal ? undefined : railCollapse ? "cover" : pickerCategoryForRail(url, activePanel) ? "lift" : url === railPanelFor(activePanel) ? "origin" : "cover";
     useEffect(() => {
         if (railMode !== "collapse") return;
         const root = document.documentElement;
@@ -289,9 +284,8 @@ const AppSidebar = () => {
     // Owner review: ?railBar=flush|gap2|kiss (unset is flush).
     const railBar = useMemo(() => reviewChoice(window.location.search, RAIL_BAR_PARAM, RAIL_BARS), []);
 
-    // Alt-Repeat has its own rail item once the board has entries; until then it waits under More.
-    const hasAltRepeat = hasAltRepeatEntries(keyboard);
-    const featureSidebarItems = useMemo(() => featureSidebarItemsFor(hasAltRepeat), [hasAltRepeat]);
+    // The editors under More (Overrides, Alt-Repeat, App Layers) are marked on the rail as More.
+    const railPanel = railPanelFor(activePanel);
 
     const handleItemSelect = useCallback(
         (selected: SidebarItem) => {
@@ -309,7 +303,7 @@ const AppSidebar = () => {
                 const category = pickerCategoryForRail(item.url, activePanel);
                 if (category) setPickerMode(category);
                 // The editor's own item never leaves it: it points to the way out.
-                else if (item.url === activePanel) nudgeBindingEditor();
+                else if (item.url === railPanelFor(activePanel)) nudgeBindingEditor();
                 return;
             }
             // Panels that became cards of Settings open Settings at that card.
@@ -375,7 +369,7 @@ const AppSidebar = () => {
     }, [keyboard?.menus]);
 
     // While editing, the rail marks the picker category in use.
-    const markedPanel = editing ? shownPickerMode : activePanel;
+    const markedPanel = editing ? shownPickerMode : railPanel;
     const activeTopIndex = topSectionItems.findIndex((item) => item.url === markedPanel);
     const activeMiddleIndex = middleSectionItems.findIndex((item) => item.url === markedPanel);
     const activeFeatureIndex = featureSidebarItems.findIndex((item) => item.url === markedPanel);
@@ -573,7 +567,7 @@ const AppSidebar = () => {
                                     key={item.url}
                                     item={item}
                                     isActive={markedPanel === item.url}
-                                    isPreviousPanel={panelToGoBack === item.url}
+                                    isPreviousPanel={railPanelFor(panelToGoBack) === item.url}
                                     alternativeHeader={alternativeHeader && !editing}
                                     isCollapsed={isCollapsed}
                                     onClick={handleItemSelect}
@@ -588,7 +582,7 @@ const AppSidebar = () => {
                                     key={item.url}
                                     item={item}
                                     isActive={markedPanel === item.url}
-                                    isPreviousPanel={panelToGoBack === item.url}
+                                    isPreviousPanel={railPanelFor(panelToGoBack) === item.url}
                                     alternativeHeader={alternativeHeader && !editing}
                                     isCollapsed={isCollapsed}
                                     onClick={handleItemSelect}
@@ -606,7 +600,7 @@ const AppSidebar = () => {
                                     key={item.url}
                                     item={item}
                                     isActive={markedPanel === item.url}
-                                    isPreviousPanel={panelToGoBack === item.url}
+                                    isPreviousPanel={railPanelFor(panelToGoBack) === item.url}
                                     alternativeHeader={alternativeHeader && !editing}
                                     isCollapsed={isCollapsed}
                                     onClick={handleItemSelect}
@@ -622,7 +616,7 @@ const AppSidebar = () => {
                                     key={item.url}
                                     item={item}
                                     isActive={markedPanel === item.url}
-                                    isPreviousPanel={panelToGoBack === item.url}
+                                    isPreviousPanel={railPanelFor(panelToGoBack) === item.url}
                                     alternativeHeader={alternativeHeader && !editing}
                                     isCollapsed={isCollapsed}
                                     onClick={handleItemSelect}
@@ -638,7 +632,7 @@ const AppSidebar = () => {
                                     key={item.url}
                                     item={item}
                                     isActive={markedPanel === item.url}
-                                    isPreviousPanel={panelToGoBack === item.url}
+                                    isPreviousPanel={railPanelFor(panelToGoBack) === item.url}
                                     alternativeHeader={alternativeHeader && !editing}
                                     isCollapsed={isCollapsed}
                                     onClick={handleItemSelect}
@@ -649,7 +643,7 @@ const AppSidebar = () => {
                         </SidebarMenu>
                     </div>
 
-                    {/* Footer section - Quick Start, Manual, About, Settings */}
+                    {/* Footer section - Quick Start, Manual, Overlay, Settings */}
                     <div className="py-2 mb-3">
                         <SidebarMenu className="relative">
                             {activeFooterIndex !== -1 && !editing && <SlidingIndicator y={activeFooterIndex * MENU_ITEM_GAP_PX} />}

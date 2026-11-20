@@ -206,6 +206,7 @@ class FakeReader:
     def info(self): return 3, 1
     def checkpoint(self): pass
     def pointing_watching(self): return False
+    def app_rules(self): return False
     def pointing_motion(self): return None
 
     def read_profile(self, uid, progress=None, reuse_definition=False):

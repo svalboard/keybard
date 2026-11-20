@@ -1,6 +1,6 @@
 # Keybard Overlay
 
-Keybard Overlay shows your Svalboard layout as a transparent overlay on your desktop. It follows the layer you're on, so you can glance at it while you type in any app. It runs in the system tray and only reads from the keyboard: it never changes your layout or flashes firmware.
+Keybard Overlay shows your Svalboard layout as a transparent overlay on your desktop. It follows the layer you're on, so you can glance at it while you type in any app. It runs in the system tray and reads from the keyboard: it never changes your layout or flashes firmware. The one thing it tells a board is which app is in front, for app rules (below).
 
 You choose what the overlay looks like in the **Overlay** panel of [Keybard](https://keybard.svalboard.com).
 
@@ -36,9 +36,15 @@ Use Chrome or Edge. **Open Keybard** in the tray menu takes you back to the Over
 - **Keycap legends:** digit and punctuation keys show the shifted symbol top left and the base legend bottom left, for the keyboard language chosen under International keyboards in Keybard. With **AltGr Symbols** on in Keybard's Settings (German, French, Spanish, Italian, Brazilian, Danish and Swiss layouts; not on macOS), the AltGr character is bottom right. The overlay follows these settings (and the keyboard language) while Keybard's Overlay dialog is open; **Shifted Key Symbols** off in Keybard shows one legend per key. A key with no room for the extra legends keeps one centered legend.
 - **Shift and Caps Lock** on your Svalboard change the letters and symbols shown, using the keyboard language chosen in Keybard. Firmware from vNext1 on reports them itself, so other keyboards on the computer don't change the legends. On older firmware the overlay follows the computer's Shift and Caps Lock instead, which doesn't work on Wayland.
 
+## App rules
+
+On firmware with app rules, the board can change layers while a given app is in front: you set the rules in Keybard. Keybard Overlay tells the board which app is in front, when you switch apps and every 5 seconds, and says no app is in front when it quits. Without Keybard Overlay running, no rule applies. The app is named by its program file on Windows (`notepad.exe`), its bundle ID on macOS (`com.apple.Safari`), and its Wayland app ID or X11 window class on Linux (`firefox`). On Linux under Wayland, only sway and Hyprland say which window is in front; on GNOME and KDE Wayland no rule applies.
+
+A rule can also be for a website (`onshape.com`), for apps that run in the browser. On Windows, while a board has a website rule and Chrome, Edge, Brave, Vivaldi or Firefox is in front, Keybard Overlay reads the host name in the browser's address bar through Windows UI Automation (no extension needed): when it switches to that browser, when the tab changes, and every 5 seconds. A site matches its own address and every address under it (`onshape.com` matches `cad.onshape.com`), never the rest of a longer site's domain (`practice.svalboard.com` doesn't match `docs.svalboard.com`). Other tabs, a new tab while you type its address, browser pages, and a read that fails or takes longer than 150 ms count as the browser's program (`chrome.exe`). It keeps no address or page title, and logs neither; the board gets only the rule's ID. On macOS and Linux it doesn't read browser addresses yet, so there the browser always counts as its program.
+
 ## What it doesn't do
 
-Keybard Overlay never writes to the keyboard, flashes firmware or records what you type. Its control page listens only on your own computer. It takes commands only from its built-in Keybard, keybard.svalboard.com and the preview site next.keybard.svalboard.com, and each change needs a per-session token.
+Keybard Overlay never changes anything stored on the keyboard, flashes firmware or records what you type. To a board with app rules it sends only an ID made from the name of the app in front (for example `notepad.exe`, or `site:onshape.com` for a website rule), which the board forgets 15 seconds after it last hears it. It reads the rules back from the board to learn their websites, and never writes them. Its control page listens only on your own computer. It takes commands only from its built-in Keybard, keybard.svalboard.com and the preview site next.keybard.svalboard.com, and each change needs a per-session token.
 
 ## Updating
 
@@ -136,6 +142,12 @@ This makes `dist/KeybardOverlay-Windows.zip`, a local test build. It isn't signe
 ```sh
 npm test
 PYTHONPATH=companion/overlay-host python3 -m unittest discover -s companion/overlay-host/tests -v
+```
+
+To try a build next to an installed Keybard Overlay without touching it, give it its own instance name and port: `--instance` keeps its settings, lock and browser data in a separate folder (`Keybard Host <name>`), so it never asks the installed one to quit.
+
+```sh
+python -m keybard_host --instance apptest --port 5190 --no-open
 ```
 
 These don't cover moving the window, focus, click-through, fullscreen, or live layer and held-key changes on real hardware. Check those by hand.

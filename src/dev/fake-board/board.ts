@@ -67,7 +67,12 @@ export interface FakeBoardState {
     defaultLayer: number;
     /** GET_INFO storage flags bit 0 / bit 2, until the host clears them (0x2A). */
     storageFlags: number;
+    /** The app rules record (settings area record 10): [format][count][0][0] and 64 rules of 24 bytes. */
+    appRules: Uint8Array;
 }
+
+/** The app rules record (format 2, packed): header, rules and their text share it. */
+export const APP_RULES_RECORD_BYTES = 1792;
 
 export const STORAGE_KEY = "keybard.fakeBoard.v1";
 
@@ -100,6 +105,8 @@ export function blankBoard(): FakeBoardState {
         identityName: "",
         defaultLayer: 0,
         storageFlags: 0,
+        // Never stored: all zeros, no rules.
+        appRules: new Uint8Array(APP_RULES_RECORD_BYTES),
     };
     return state;
 }
@@ -187,7 +194,7 @@ function trimmed(bytes: Uint8Array): Uint8Array {
 
 type Stored = Record<string, string | number>;
 
-const binaryFields = ["keymap", "macros", "tapDance", "combo", "keyOverride", "altRepeatKey", "leader", "qmkSettings", "fragments", "custom", "rgb"] as const;
+const binaryFields = ["keymap", "macros", "tapDance", "combo", "keyOverride", "altRepeatKey", "leader", "qmkSettings", "fragments", "custom", "rgb", "appRules"] as const;
 
 export function serializeBoard(state: FakeBoardState): string {
     const out: Stored = { v: 1, magic: state.magic, identityName: state.identityName, defaultLayer: state.defaultLayer, storageFlags: state.storageFlags };
