@@ -43,9 +43,10 @@ MEASURE_JS = r"""
 (mode) => {
   const inCanvas = el => !!el.closest('[aria-label="Keyboard canvas"]');
   const root = mode === 'aside' ? (document.querySelector('aside[data-placement]') || document.body) : document.body;
-  // The Overlay draws its keys as SVG groups, not as picker tiles; each key's outline is its first rect.
+  // The Overlay draws its keys as SVG groups, not as picker tiles; each key's outline is its first rect,
+  // and its legend is HTML laid over the drawing (.trainer-legends), found by the same key id.
   const caps = mode === 'overlay'
-    ? [...document.querySelectorAll('[data-key-id]')].filter(g => g.getClientRects().length > 0)
+    ? [...document.querySelectorAll('svg g[data-key-id]')].filter(g => g.getClientRects().length > 0)
     : [...root.querySelectorAll('[data-keycap]')].filter(el =>
         (mode === 'canvas' ? inCanvas(el) : !inCanvas(el)) && el.getClientRects().length > 0 &&
         (!el.checkVisibility || el.checkVisibility({ visibilityProperty: true, opacityProperty: true })));
@@ -63,9 +64,14 @@ MEASURE_JS = r"""
       t: box.top + bw('Top') - 0.5,
       b: box.bottom - bw('Bottom') + 0.5,
     };
-    const walker = document.createTreeWalker(cap, NodeFilter.SHOW_TEXT);
+    const legend = overlay ? document.querySelector(`.trainer-legends > [data-key-id="${cap.dataset.keyId}"]`) : null;
     let reason = null, text = '';
+    for (const part of [cap, legend]) {
+    if (!part) continue;
+    const walker = document.createTreeWalker(part, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      // A key's hover title is not drawn on it.
+      if (n.parentElement && n.parentElement.closest('title')) continue;
       const s = n.textContent;
       text += s + ' ';
       let prev = null;
@@ -88,11 +94,12 @@ MEASURE_JS = r"""
         prev = rect;
       }
     }
+    }
     if (cap.querySelector('[data-tile-label="broken"]')) reason = reason || 'broken word';
     if (reason) bad.push({
       keycode: cap.getAttribute('title') || '',
       text: text.trim().replace(/\s+/g, ' '),
-      shown: cap.innerText.replace(/\s+/g, ' / ').trim(),
+      shown: (legend || cap).innerText.replace(/\s+/g, ' / ').trim(),
       reason,
     });
   }
