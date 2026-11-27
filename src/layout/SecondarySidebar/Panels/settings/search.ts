@@ -52,6 +52,7 @@ export const BLOCK_SYNONYMS: Record<SettingsBlock, string[]> = {
     typing: typingBehaviorWords(),
     power: ["idle", "light idle", "deep idle", "scan pre-wait", "scan period", "trackball rest mode", "dim lights when idle", "power saving", "key scanning"],
     about: ["version", "help", "manual", "docs", "community", "discord", "support", "release notes", "credits"],
+    status: ["status report", "board status", "output status", "support report", "keyboard report", "support", "diagnostics", "troubleshooting", "copy", "cpi", "dpi", "scan timing", "clock", "is mac", "detected os"],
     debug: ["debug console", "debug", "console", "log", "logging", "key events", "troubleshooting", "diagnostics", "hid_listen"],
 };
 

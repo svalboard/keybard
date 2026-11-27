@@ -69,6 +69,8 @@ export const FLAG4_SCROLL_SPEED = 0x20;
 export const FLAG4_TRACKPOINT_SPEED = 0x40;
 // flags4 bit 7: Auto Mouse layers (VIA 63 the mode, 64 the 16-bit mask of layers where it is off).
 export const FLAG4_AUTOMOUSE_LAYERS = 0x80;
+// flags5 (GET_INFO byte 22) bit 1: the status report (Sval 0x3F). Bit 0 is app rules.
+export const FLAG5_STATUS_REPORT = 0x02;
 
 /** What a half's pointing slot holds (the 0x2C reply's detected module). */
 export type FakeModule = "pmw3389" | "azoteq" | "trackpoint" | "none";
@@ -146,6 +148,8 @@ export interface FakeFirmwareOptions {
     flickerLatch?: boolean;
     /** Firmware with the debug console command (Sval 0x3E, GET_INFO byte 21 bit 2). Default true. */
     debugConsole?: boolean;
+    /** Firmware with the status report (Sval 0x3F, GET_INFO byte 22 bit 1). Default true. */
+    statusReport?: boolean;
     /**
      * Firmware with the optical debounce switch: VIA value 48 and Scan Lab
      * STATUS byte 23 (svalboard.c, scanlab.c). Default true.
@@ -247,6 +251,13 @@ export class FakeSvalFirmware {
     readonly typingPause: boolean;
     readonly flickerLatch: boolean;
     readonly debugConsole: boolean;
+    readonly statusReport: boolean;
+    /** The computer's OS as the board detected it (QMK os_variant_t: 2 Windows, 3 macOS). */
+    hostOs = 2;
+    /** Set to make STATUS_REPORT answer with an error, as a board that stops answering would (tests the failure line). */
+    statusFails = false;
+    /** STATUS_REPORT requests, [page, arg], oldest first. */
+    readonly statusRequests: [number, number][] = [];
     /** QMK's debug_enable: RAM only, off whenever the board starts (keyboard_post_init_kb). */
     debugEnable = false;
     /** Every DEBUG_CONSOLE request's op, oldest first. */
@@ -347,6 +358,7 @@ export class FakeSvalFirmware {
         this.typingPause = options.typingPause ?? true;
         this.flickerLatch = options.flickerLatch ?? true;
         this.debugConsole = options.debugConsole ?? true;
+        this.statusReport = options.statusReport ?? true;
         this.debounceSwitch = options.debounceSwitch ?? true;
         this.timingUsOnly = options.timingUsOnly ?? true;
         this.padGestures = options.padGestures ?? true;
@@ -1101,6 +1113,49 @@ export class FakeSvalFirmware {
         }
     }
 
+    // ---- status_report.c --------------------------------------------------------
+
+    /** The build text page 1 returns (QMK_KEYBOARD:QMK_KEYMAP @ QMK_VERSION). */
+    static readonly STATUS_BUILD = "svalboard/either:sval @ x4.6.7-fake";
+
+    /** STATUS_REPORT, in place: page 0 from the stored settings, page 1 the build text. */
+    private statusCommand(d: Uint8Array, length: number): void {
+        const page = d[0], arg = d[1];
+        this.statusRequests.push([page, arg]);
+        const c = this.state.custom;
+        const get16 = (id: number) => c[id * 2] | (c[id * 2 + 1] << 8);
+        const put16 = (o: number, v: number) => { d[o] = v & 0xff; d[o + 1] = (v >> 8) & 0xff; };
+        d.fill(0, 0, length);
+        d[0] = page;
+        if (page === 1) {
+            const text = new TextEncoder().encode(FakeSvalFirmware.STATUS_BUILD);
+            const n = arg < text.length ? Math.min(text.length - arg, length - 5) : 0;
+            d[1] = 1; d[2] = text.length; d[3] = arg; d[4] = n;
+            d.set(text.subarray(arg, arg + n), 5);
+            return;
+        }
+        if (page !== 0 || length < 40) return;
+        const DPI = [200, 400, 600, 800, 1200, 1600, 2400, 3200, 4800, 6400, 12000];
+        const on = (id: number, bit: number) => (c[id * 2] ? bit : 0);
+        const mac = this.hostOs === 3 || this.hostOs === 4;
+        const noTimeout = c[ID_AUTOMOUSE_CHOICE * 2] === AUTOMOUSE_NEVER;
+        d[1] = 1;
+        d[2] = on(1, 0x01) | on(3, 0x02) | on(8, 0x04) | on(7, 0x08) | on(4, 0x10) | on(11, 0x20) | on(12, 0x40) | (mac ? 0x80 : 0);
+        d[3] = (c[15 * 2] ? 0x01 : 0) | (this.opticalDebounceOn ? 0x02 : 0) | (this.state.storageFlags & 1 ? 0x04 : 0) | (noTimeout ? 0x10 : 0);
+        d[4] = this.hostOs;
+        put16(5, DPI[c[0]] ?? 800);
+        put16(7, DPI[c[2 * 2]] ?? 800);
+        put16(9, noTimeout ? 0 : get16(ID_AUTOMOUSE_MS));
+        d[15] = 1; // Boost off
+        put16(16, get16(13)); put16(18, get16(14));
+        put16(20, get16(20)); put16(22, get16(21)); put16(24, get16(22)); put16(26, get16(24)); put16(28, get16(23));
+        put16(30, get16(20) || 412); // measured frame: the period, or an unpaced scan's
+        put16(34, 120);
+        d[37] = on(25, 0x01) | on(26, 0x02) | on(27, 0x04) | on(28, 0x08) | on(29, 0x10);
+        d[38] = [48, 24, 12][c[30 * 2]] ?? 48;
+        d[39] = 125;
+    }
+
     // ---- modules/svalboard/core/sval.c -----------------------------------------
 
     /** sval_handle_command: data[0] = 0xDF, data[1] = command, in place. */
@@ -1127,6 +1182,7 @@ export class FakeSvalFirmware {
                     | (this.debugConsole ? FLAG4_DEBUG_CONSOLE : 0) | FLAG4_POINTING_SENSOR | (this.scrollSpeed ? FLAG4_SCROLL_SPEED : 0)
                     | (this.modules.left === "trackpoint" || this.modules.right === "trackpoint" ? FLAG4_TRACKPOINT_SPEED : 0)
                     | (this.autoMouseLayers ? FLAG4_AUTOMOUSE_LAYERS : 0);
+                if (length > 22) data[22] = this.statusReport ? FLAG5_STATUS_REPORT : 0;
                 break;
             }
             case 0x2a: // STORAGE_RESET_CLEAR
@@ -1358,6 +1414,13 @@ export class FakeSvalFirmware {
                     break;
                 }
                 if (length > 3) this.flickerCommand(data.subarray(2), length - 2);
+                break;
+            case 0x3f: // STATUS_REPORT (svalboard.c sval_status_report_kb): [page][arg] -> [page][format][...]
+                if (!this.statusReport || this.statusFails) {
+                    data[1] = SVAL_CMD_ERROR;
+                    break;
+                }
+                if (length > 3) this.statusCommand(data.subarray(2), length - 2);
                 break;
             case 0x3e: // DEBUG_CONSOLE (debug_console.c): [op] -> [op][status][flag]
                 if (!this.debugConsole) {

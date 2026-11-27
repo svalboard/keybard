@@ -50,7 +50,7 @@ describe('Settings page declaration', () => {
     });
 
     it('holds Hardware, Typing behavior and every block once', () => {
-        expect([...blocksOnPage()].sort()).toEqual(['about', 'backups', 'board', 'debug', 'firmware', 'hardware', 'power', 'typing']);
+        expect([...blocksOnPage()].sort()).toEqual(['about', 'backups', 'board', 'debug', 'firmware', 'hardware', 'power', 'status', 'typing']);
     });
 
     it('has no Pointing card and no Touchpad tuning card: they live in Pointing Devices', () => {
@@ -107,6 +107,18 @@ describe('the page a board shows', () => {
     it('has the Debug console row only when the board has it', () => {
         expect(debugRow(shownPage({ debugConsole: true }))).toBe(true);
         expect(debugRow(shownPage({ debugConsole: false }))).toBe(false);
+    });
+
+    it('has the Board status row only when the board has the status report, in About after Keybard', () => {
+        const statusRow = (page: ReturnType<typeof shownPage>) => page.find((s) => s.id === 'about')!.rows.some((r) => 'block' in r && r.block === 'status');
+        expect(statusRow(shownPage({ debugConsole: false, statusReport: true }))).toBe(true);
+        expect(statusRow(shownPage({ debugConsole: false }))).toBe(false);
+        const about = shownPage({ debugConsole: true, statusReport: true }).find((s) => s.id === 'about')!.rows;
+        expect(about.slice(0, 3)).toEqual([{ block: 'about' }, { block: 'status' }, { block: 'debug' }]);
+        for (const query of ['board status', 'output status', 'support']) {
+            expect(searchSettings(shownPage({ debugConsole: false }), query, lookup)?.get('about')?.rows.has('block:status') ?? false).toBe(false);
+            expect(searchSettings(shownPage({ debugConsole: false, statusReport: true }), query, lookup)?.get('about')?.rows.has('block:status')).toBe(true);
+        }
     });
 
     it('never finds the Debug console row in search when the firmware has no command', () => {

@@ -17,7 +17,7 @@ import { ALTGR_LEGENDS_SETTING, SHIFTED_LEGENDS_SETTING } from "@/lib/shiftedLeg
  * description for this page) or a block this page renders itself. To add a
  * preference, add its definition to SETTINGS and its name to a section here.
  */
-export type SettingsBlock = "hardware" | "firmware" | "board" | "backups" | "typing" | "power" | "about" | "debug";
+export type SettingsBlock = "hardware" | "firmware" | "board" | "backups" | "typing" | "power" | "about" | "status" | "debug";
 
 export type SettingsRow =
     | { setting: string; label?: string; description?: string }
@@ -121,33 +121,36 @@ export const SETTINGS_PAGE: SettingsSection[] = [
         defaultOpen: false,
         rows: [
             { block: "about" },
+            // Only on firmware with the status report command: opens StatusReportDialog.
+            { block: "status" },
             // Only on firmware with the debug console command (DebugConsoleRow).
             { block: "debug" },
             { setting: "scan-lab", label: "Scan Lab", description: "Measure key scanning and sensor timing." },
             { setting: "key-proof-sheet", label: "Key proof sheet", description: "Every key rendering at every size, for visual checks." },
         ],
-        summary: "Version, manual, community and developer tools",
+        summary: "Version, status report, manual, community and developer tools",
     },
 ];
 
 /** Sections shown only on some boards: Power needs firmware that carries its values. */
 export const CONDITIONAL_SECTIONS = ["power"] as const;
 
-/** Blocks shown only on some boards: the debug console needs firmware with the command. */
-export const CONDITIONAL_BLOCKS = ["debug"] as const;
+/** Blocks shown only on some boards: the status report and the debug console need firmware with their commands. */
+export const CONDITIONAL_BLOCKS = ["status", "debug"] as const;
 
 /**
  * The page this board shows: without the debug console command no Debug console row, and without AltGr data on the
  * chosen keyboard layout no AltGr symbols row.
  * Search and rendering both use it, so a search never finds a hidden row.
  */
-export function shownPage(board: { debugConsole: boolean; altgr?: boolean; power?: boolean }, page: SettingsSection[] = SETTINGS_PAGE): SettingsSection[] {
+export function shownPage(board: { debugConsole: boolean; statusReport?: boolean; altgr?: boolean; power?: boolean }, page: SettingsSection[] = SETTINGS_PAGE): SettingsSection[] {
     return page
         .filter((section) => (section.id !== "power" || board.power !== false))
         .map((section) => ({
             ...section,
             rows: section.rows.filter((row) =>
                 !(!board.debugConsole && "block" in row && row.block === "debug") &&
+                !(!board.statusReport && "block" in row && row.block === "status") &&
                 // AltGr Symbols shows only when the Key legends layout has an AltGr level.
                 !(board.altgr === false && "setting" in row && row.setting === ALTGR_LEGENDS_SETTING)),
         }));

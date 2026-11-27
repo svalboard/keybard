@@ -10,6 +10,11 @@ export const COMMUNITY_URL = "https://svalboard.com/discord";
 
 const linkClass = "underline underline-offset-2 hover:text-kb-ink";
 
+/** A host name that wraps after its dots in a narrow panel instead of running off the card. */
+export function hostBreaks(host: string): React.ReactNode {
+    return host.split(/(?<=\.)/).map((part, i) => <React.Fragment key={i}>{i > 0 && <wbr />}{part}</React.Fragment>);
+}
+
 /** Keybard's own facts and links. The other site is a plain link: the site is the channel. */
 const AboutSection: React.FC = () => {
     const onNext = import.meta.env.VITE_CHANNEL === "next";
@@ -24,7 +29,7 @@ const AboutSection: React.FC = () => {
                 <dd className="font-mono text-kb-ink break-all">{keybardVersion()}</dd>
                 <dt className="text-muted-foreground">{other.label}</dt>
                 <dd>
-                    <a href={other.url} target="_blank" rel="noopener" className={linkClass}>{other.host}</a>
+                    <a href={other.url} target="_blank" rel="noopener" className={linkClass}>{hostBreaks(other.host)}</a>
                 </dd>
             </dl>
             <p className="flex flex-row flex-wrap gap-x-3 gap-y-1 text-muted-foreground">

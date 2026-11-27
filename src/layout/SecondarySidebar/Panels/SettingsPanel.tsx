@@ -19,11 +19,13 @@ import TypingBehaviorPanel from "./TypingBehaviorPanel";
 import DeveloperTuningSection, { developerTuningMenuIndex } from "./DeveloperTuningSection";
 import AboutSection from "./settings/AboutSection";
 import DebugConsoleRow from "./settings/DebugConsoleRow";
+import StatusReportDialog, { STATUS_REPORT_ROW } from "./settings/StatusReportDialog";
 import FirmwareRow from "./settings/FirmwareRow";
 import SettingRow from "./settings/SettingRow";
 import { onSettingsSectionRequest, takeSettingsSectionRequest } from "./settings/anchor";
 import { SETTINGS_PAGE, shownPage, type SettingsBlock, type SettingsRow, type SettingsSection } from "./settings/layout";
 import { hasDebugConsole } from "@/services/debug-console";
+import { hasStatusReport } from "@/services/status-report";
 import { useStickySections } from "./settings/useStickySections";
 import { highlightParts, rowKey, searchSettings } from "./settings/search";
 
@@ -69,6 +71,7 @@ const SettingsPanel = () => {
     const { navigateTo } = useNavigation();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isExportOpen, setIsExportOpen] = useState(false);
+    const [isStatusOpen, setIsStatusOpen] = useState(false);
     const { handleFileImport, reviewFile, importReview } = useLayoutImport();
     // The update the rail's dot pointed at: marked on the Firmware chip, with Firmware
     // open, for this visit (opening Settings clears the rail dot).
@@ -89,10 +92,12 @@ const SettingsPanel = () => {
     const [query, setQuery] = useState("");
     // The Debug console row shows only on firmware with the command.
     const debugShown = isConnected && hasDebugConsole(keyboard?.feature_flags4);
+    // The Status report row shows only on firmware with the status report command.
+    const statusShown = isConnected && hasStatusReport(keyboard?.feature_flags5);
     const { internationalLayout, keyLegendsChoice = internationalLayout, keyLegendsStatus, setInternationalLayout } = useLayoutSettings();
     const altgrShown = hasAltGr(internationalLayout);
     const powerShown = isConnected && developerTuningMenuIndex(keyboard?.menus) >= 0;
-    const pageSections = useMemo(() => shownPage({ debugConsole: debugShown, altgr: altgrShown, power: powerShown }), [debugShown, altgrShown, powerShown]);
+    const pageSections = useMemo(() => shownPage({ debugConsole: debugShown, statusReport: statusShown, altgr: altgrShown, power: powerShown }), [debugShown, statusShown, altgrShown, powerShown]);
     const matches = useMemo(() => searchSettings(pageSections, query, getSettingDefinition), [pageSections, query, getSettingDefinition]);
     const searching = matches !== null;
 
@@ -158,6 +163,7 @@ const SettingsPanel = () => {
         else if (action === "open-scan-lab") setActivePanel("scanlab");
         else if (action === "open-trackball") openTrackballSensor();
         else if (action === "open-proof-sheet") navigateTo("proof-sheet");
+        else if (action === "open-status-report") setIsStatusOpen(true);
     };
 
     const renderBlock = (block: SettingsBlock) => {
@@ -178,6 +184,8 @@ const SettingsPanel = () => {
                 return <DeveloperTuningSection bare />;
             case "about":
                 return <AboutSection />;
+            case "status":
+                return <SettingRow definition={STATUS_REPORT_ROW} label={STATUS_REPORT_ROW.label} description={STATUS_REPORT_ROW.description} value="" onChange={() => {}} onAction={runAction} highlight={highlight} />;
             case "debug":
                 return <DebugConsoleRow highlight={highlight} />;
         }
@@ -273,6 +281,8 @@ const SettingsPanel = () => {
                 onChange={handleFileImport}
             />
             <ExportDialog open={isExportOpen} onOpenChange={setIsExportOpen} />
+            {/* Outside the row: a board that disconnects hides the row, and the dialog says so instead of vanishing. */}
+            <StatusReportDialog open={isStatusOpen} onOpenChange={setIsStatusOpen} />
 
             <div className="sticky top-0 z-10 -mx-1 flex flex-col gap-2 bg-kb-surface px-1 pt-1.5 pb-2">
                 <div role="search" className="relative">

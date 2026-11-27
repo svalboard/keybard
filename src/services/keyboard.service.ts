@@ -16,6 +16,7 @@ import LZMA from "js-lzma";
 import { assertSupportedSvilProto } from "@/utils/unsupported-firmware";
 import { CMD_SVIL_FLICKER_LATCH, FLICKER_COUNTS, FLICKER_READ, hasFlickerLatch, parseFlickerCounts, parseFlickerRead, type FlickerCounts, type FlickerRead } from "@/services/flicker-latch";
 import { CMD_SVIL_DEBUG_CONSOLE, hasDebugConsole, parseDebugConsoleReply, type DebugConsoleReply } from "@/services/debug-console";
+import { CMD_SVIL_STATUS_REPORT, hasStatusReport, readBoardStatus, type BoardStatus } from "@/services/status-report";
 import { CMD_SVIL_TYPING_PAUSE, hasTypingPause, parseTypingPauseReply, type TypingPauseReply } from "@/services/typing-pause";
 import { parsePointingHardware, SVIL_FLAG2_POINTING_HARDWARE } from "@/utils/pointing-hardware";
 import { parsePointingContacts, SVIL_FLAG2_POINTING_CONTACTS, withPadContacts, type PointingContactsReport } from "@/utils/pointing-contacts";
@@ -257,6 +258,8 @@ export class KeyboardService {
         kbinfo.feature_flags3 = svilInfo[19] ?? 0;
         // [feature_flags4:1] (GET_INFO byte 21) after that; older firmware sends zero.
         kbinfo.feature_flags4 = svilInfo[20] ?? 0;
+        // [feature_flags5:1] (GET_INFO byte 22) after that; older firmware sends zero.
+        kbinfo.feature_flags5 = svilInfo[21] ?? 0;
         // The QMK keycode numbering the board uses; older firmware sends zeros.
         const keycodeVersion = Array.from((svilInfo as Uint8Array).slice(14, 17));
         kbinfo.keycode_version_reported = keycodeVersion.some(Boolean);
@@ -537,6 +540,20 @@ export class KeyboardService {
     async typingPause(op: number): Promise<TypingPauseReply | null> {
         const reply = await this.usb.sendSvil(CMD_SVIL_TYPING_PAUSE, [op], { uint8: true }) as Uint8Array;
         return parseTypingPauseReply(reply);
+    }
+
+    /** Whether the board reports its status as data (STATUS_REPORT). */
+    hasStatusReport(kbinfo: KeyboardInfo | null | undefined): boolean {
+        return hasStatusReport(kbinfo?.feature_flags5);
+    }
+
+    /**
+     * STATUS_REPORT (0x3F): what the Output Status key types, read now. Null
+     * when the board didn't answer with one.
+     */
+    async readStatusReport(): Promise<BoardStatus | null> {
+        return readBoardStatus(async (page, arg) =>
+            (await this.usb.sendSvil(CMD_SVIL_STATUS_REPORT, [page, arg], { uint8: true })) as Uint8Array);
     }
 
     /** Whether the board can turn its debug console's key events on and off (DEBUG_CONSOLE). */
