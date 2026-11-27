@@ -13,7 +13,7 @@ import { pointingMenuIndex, useMenuValues } from "@/hooks/useMenuValues";
 import type { CustomUIMenuItem } from "@/types/keyboard.types";
 import type { Side } from "@/utils/pointing-hardware";
 import {
-    AUTOMOUSE_DECAY_KEY, AUTOMOUSE_ENABLE_KEY, AUTOMOUSE_NO_TIMEOUT_KEY, AUTOMOUSE_THRESHOLD_KEY, AUTOMOUSE_TIMEOUT_KEY, AXIS_LOCK_KEY,
+    AUTOMOUSE_DECAY_KEY, AUTOMOUSE_DECAY_MIN, AUTOMOUSE_ENABLE_KEY, AUTOMOUSE_NO_TIMEOUT_KEY, AUTOMOUSE_THRESHOLD_KEY, AUTOMOUSE_TIMEOUT_KEY, AXIS_LOCK_KEY,
     dpiChoices, effectiveDpiIndex, findMenuItem, formatScrollSpeed, HAND_KEYS, hasScrollSpeed, hasTrackpointSpeed, maxDpiFor,
     NATURAL_SCROLL_KEY, pointingHands, SCROLL_SPEED_STEPS, scrollSpeedIndex, scrollSpeedPercent, type HandModel,
 } from "@/utils/pointing-settings";
@@ -301,12 +301,12 @@ export function AutoMouseSettings() {
     const toggle = (key: string, label: string, hint?: string) => item(key)
         ? <ToggleRow key={key} label={label} hint={hint} value={values.get(key)} onChange={(v) => set(key, v)} />
         : null;
-    const range = (key: string, label: string, hint: string, format: (v: number) => string, scale = 1) => {
+    const range = (key: string, label: string, hint: string, format: (v: number) => string, scale = 1, floor = 0) => {
         const it = item(key);
         const [min, max, step] = (it?.options ?? []) as number[];
         if (!it || max === undefined) return null;
         return (
-            <RangeRow key={key} label={label} hint={hint} value={values.get(key)} min={min ?? 0} max={max} step={step ?? 1}
+            <RangeRow key={key} label={label} hint={hint} value={values.get(key)} min={Math.max(min ?? 0, floor)} max={max} step={step ?? 1}
                 format={(v) => format(v * scale)} onCommit={(v) => set(key, v)} />
         );
     };
@@ -318,7 +318,7 @@ export function AutoMouseSettings() {
             {autoOn && toggle(AUTOMOUSE_NO_TIMEOUT_KEY, "No Layer Timeout", "The layer never returns on its own")}
             {autoOn && noTimeout === 0 && range(AUTOMOUSE_TIMEOUT_KEY, "Layer Timeout", "How long the layer stays once the pointer rests", (v) => `${v} ms`)}
             {autoOn && range(AUTOMOUSE_THRESHOLD_KEY, "Activation Threshold", "Ignores small bumps. 0 switches on any motion", String)}
-            {autoOn && range(AUTOMOUSE_DECAY_KEY, "Activation Decay", "How long movement counts before it is forgotten", (v) => `${v} ms`, 10)}
+            {autoOn && range(AUTOMOUSE_DECAY_KEY, "Activation Decay", "How long movement counts before it is forgotten", (v) => `${v} ms`, 10, AUTOMOUSE_DECAY_MIN)}
         </div>
     );
 }

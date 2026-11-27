@@ -39,6 +39,8 @@ export const AUTOMOUSE_NO_TIMEOUT_KEY = "id_automouse_no_timeout";
 export const AUTOMOUSE_TIMEOUT_KEY = "id_automouse_timeout_ms";
 export const AUTOMOUSE_THRESHOLD_KEY = "id_automouse_threshold";
 export const AUTOMOUSE_DECAY_KEY = "id_automouse_decay";
+/** Activation Decay is stored in 10 ms steps; it is at least 10 ms. Older firmware menus start at 0, which meant "never forget". */
+export const AUTOMOUSE_DECAY_MIN = 1;
 export const LEFT_AUTOMOUSE_KEY = "id_left_automouse";
 export const RIGHT_AUTOMOUSE_KEY = "id_right_automouse";
 

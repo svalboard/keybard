@@ -305,6 +305,22 @@ describe('Pointing Devices cards', () => {
         expect(enable.compareDocumentPosition(keys[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
+    it('starts Activation Decay at 10 ms, even when the firmware menu starts at 0', () => {
+        setBoard([half('left', 'pmw3389')], 0, FLAGS4_PAD);
+        const decayShown = (c: HTMLElement) => c.querySelector('[data-row="Activation Decay"] [data-row-value]')?.textContent;
+        const { container, unmount } = render(<PointingSection />);
+        const slider = screen.getByRole('slider', { name: 'Activation Decay' });
+        expect(decayShown(container)).toBe('500 ms');
+        fireEvent.keyDown(slider, { key: 'Home' });
+        expect(state.setValue).toHaveBeenCalledWith('id_automouse_decay', 1);
+        expect(state.setValue).not.toHaveBeenCalledWith('id_automouse_decay', 0);
+        unmount();
+        // A stored 0 (older firmware: never forget) shows the lowest step, 10 ms.
+        state.values.set('id_automouse_decay', 0);
+        const again = render(<PointingSection />);
+        expect(decayShown(again.container)).toBe('10 ms');
+    });
+
     it('keeps the AutoMouse keys offline, where there are no settings to show', () => {
         state.connected = false;
         const { container } = render(<PointingSection />);
