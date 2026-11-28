@@ -215,6 +215,7 @@ export interface USBSendOptions {
     bytes?: number;
     skipBytes?: number;  // Skip N bytes from start of payload before parsing (e.g., skip cmd echo)
     validateInput?: (data: Uint8Array) => boolean;
+    timeoutMs?: number;  // Reply timeout; by default 1 s for a read, longer for a write (replyTimeoutFor)
 }
 
 export interface KeyboardAPI {

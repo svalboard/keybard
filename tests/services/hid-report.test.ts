@@ -100,6 +100,8 @@ function fakeKeyboard(len: number, definition: Uint8Array, definitionCap = 22) {
                     const want = Math.min(msg[9] || definitionCap, definitionCap);
                     const chunk = definition.slice(offset, offset + want);
                     f.set([msg[6], msg[7], msg[8], chunk.length, ...chunk], 6);
+                } else {
+                    f[6] = msg[6]; // the firmware repeats the command byte
                 }
                 deliver(f);
             }, 0);

@@ -167,6 +167,61 @@ function generateNonce(): Uint8Array {
   return nonce;
 }
 
+/** How long a read waits for its reply. */
+export const REPLY_TIMEOUT_MS = 1000;
+/**
+ * How long a write waits for its reply. Any write to the settings store can fill its log and
+ * start a consolidation, which holds the reply back for up to about 4.5 s.
+ */
+export const WRITE_REPLY_TIMEOUT_MS = 6000;
+/** How long after a request was sent a late reply to it is still recognized, and dropped. */
+export const STALE_REPLY_MS = 10000;
+
+// VIA commands that write the settings store.
+const VIA_WRITES = new Set([0x03, 0x05, 0x06, 0x07, 0x09, 0x0a, 0x0f, 0x10, 0x13, 0x15]);
+// Sval commands that write the settings store.
+const SVIL_WRITES = new Set([0x02, 0x04, 0x06, 0x08, 0x0a, 0x0b, 0x0c, 0x12, 0x13, 0x15, 0x1a, 0x1c, 0x1d, 0x20, 0x2a, 0x2b, 0x41]);
+// VIA commands whose reply repeats their first arguments in place (via.c fills results in after
+// them): how many. A custom value (0x07/0x08) repeats channel and value ID; a save (0x09) the channel.
+const VIA_ECHOED_ARGS: Record<number, number> = {
+  0x02: 1, 0x03: 1, 0x04: 3, 0x05: 3, 0x07: 2, 0x08: 2, 0x09: 1, 0x0e: 3, 0x0f: 3, 0x12: 3, 0x13: 3,
+};
+// Reply in place of the command byte: VIA's id_unhandled, Sval's sval_cmd_error.
+const REPLY_UNHANDLED = 0xff;
+
+/** One wrapped request, as needed to tell its reply from any other. */
+export interface WrappedRequest {
+  clientId: number;
+  protocol: number; // VIA_PREFIX or SVIL_PREFIX
+  payload: number[]; // [cmd, ...args]
+}
+
+/** The reply timeout for a request: longer for a write, which may wait out a consolidation. */
+export function replyTimeoutFor(protocol: number, cmd: number): number {
+  const writes = protocol === SVIL_PREFIX ? SVIL_WRITES : VIA_WRITES;
+  return writes.has(cmd) ? WRITE_REPLY_TIMEOUT_MS : REPLY_TIMEOUT_MS;
+}
+
+/**
+ * Whether a report is the reply to this request: same client ID and protocol, the command byte
+ * repeated (or the unhandled/error byte in its place), and for VIA the arguments the firmware
+ * repeats. An unhandled VIA reply leaves every argument in place, so up to three must match.
+ * A Sval reply overwrites its arguments (a status, a result), so only the command is checked.
+ * Error frames (protocol 0xFF) are not replies to a request and never match.
+ */
+export function isReplyTo(reply: Uint8Array, req: WrappedRequest): boolean {
+  if (reply[0] !== WRAPPER_PREFIX) return false;
+  const id = (reply[1] | (reply[2] << 8) | (reply[3] << 16) | (reply[4] << 24)) >>> 0;
+  if (id !== req.clientId >>> 0 || reply[5] !== req.protocol) return false;
+  const [cmd, ...args] = req.payload;
+  const unhandled = reply[6] === REPLY_UNHANDLED && cmd !== REPLY_UNHANDLED;
+  if (reply[6] !== cmd && !unhandled) return false;
+  if (req.protocol !== VIA_PREFIX) return true;
+  const echoed = Math.min(args.length, unhandled ? 3 : VIA_ECHOED_ARGS[cmd] ?? 0);
+  for (let i = 0; i < echoed; i++) if (reply[7 + i] !== (args[i] & 0xff)) return false;
+  return true;
+}
+
 /** How long a late updater reply gets to arrive, after a timeout, before the next request goes out. */
 const UPDATER_DRAIN_MS = 500;
 /** sendUpdaterReports: reports written to the device at once (each still waits its turn in the window). */
@@ -509,6 +564,7 @@ export class SvilUSB {
   async openDevice(device: HIDDevice): Promise<boolean> {
     this.device = device;
     this.bootstrapped = false;
+    this.staleRequests = [];
     this.reportLength = deviceReportLength(device);
     if (!this.device.opened) {
       try {
@@ -824,6 +880,7 @@ export class SvilUSB {
     this.bootstrapped = false;
     this.svilProtocolVersion = 1;
     this.reportLength = DEFAULT_REPORT_LENGTH;
+    this.staleRequests = [];
 
     if (this.device) {
       if (this.handleEvent) {
@@ -838,9 +895,32 @@ export class SvilUSB {
 
   private handleEvent?: (ev: HIDInputReportEvent) => void;
 
+  /**
+   * Requests that timed out, oldest first. The board answers in order, so a late reply comes
+   * before the reply to anything sent after it: the first report that matches one of these is
+   * that request's reply, and is dropped (with any older entry, whose reply is then lost).
+   */
+  private staleRequests: { request: WrappedRequest; until: number }[] = [];
+  /** The request waiting for its reply, and whether a report that matched it was dropped as late. */
+  private pending?: { request: WrappedRequest; tookItsMatch: boolean };
+
+  /** Drops a late reply to a request that timed out; true when this report was one. */
+  private takeStaleReply(report: Uint8Array): boolean {
+    if (!this.staleRequests.length) return false;
+    const now = Date.now();
+    this.staleRequests = this.staleRequests.filter((s) => s.until > now);
+    const i = this.staleRequests.findIndex((s) => isReplyTo(report, s.request));
+    if (i < 0) return false;
+    this.staleRequests.splice(0, i + 1);
+    if (this.pending && isReplyTo(report, this.pending.request)) this.pending.tookItsMatch = true;
+    console.warn("Dropped a late reply to a command that timed out:", report[6]);
+    return true;
+  }
+
   private async initListener(): Promise<void> {
     if (!this.device) return;
     const handleEvent = (ev: HIDInputReportEvent) => {
+      if (this.takeStaleReply(new Uint8Array(ev.data.buffer, ev.data.byteOffset, ev.data.byteLength))) return;
       if (this.listener) {
         const buffer = ev.data.buffer as ArrayBuffer;
         this.listener(buffer, ev);
@@ -935,64 +1015,8 @@ export class SvilUSB {
     args: number[],
     options: USBSendOptions = {}
   ): Promise<Uint8Array | Uint16Array | Uint32Array | number | bigint | (number | bigint)[]> {
-    if (!this.device) throw new Error("USB device not connected");
-
-    // Ensure we have a valid client ID
-    await this.ensureClientId();
-
-    // Build VIA command payload
-    const payload = [cmd, ...args];
-    const message = this.buildWrappedMessage(VIA_PREFIX, payload);
-
-    // Queue the operations to prevent listener collision
-    const operation = this.queue.then(async () => {
-      return new Promise<Uint8Array | Uint16Array | Uint32Array | number | bigint | (number | bigint)[]>((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-          console.warn("USB Command Timed out waiting for valid response:", cmd);
-          reject(new Error("USB Command Timeout"));
-        }, 1000);
-
-        this.listener = (data: ArrayBuffer) => {
-          const u8 = new Uint8Array(data);
-
-          // Validation: check wrapper prefix and client ID
-          if (u8[0] !== WRAPPER_PREFIX) return;
-          const respClientId = u8[1] | (u8[2] << 8) | (u8[3] << 16) | (u8[4] << 24);
-          if (respClientId !== this.clientId) return;
-          // Error frame addressed to us: the keyboard refused the command.
-          if (u8[5] === CLIENT_ERROR_PROTOCOL) {
-            clearTimeout(timeoutId);
-            reject(new ClientIdRejectedError(u8[6]));
-            return;
-          }
-
-          // Additional validation if provided
-          if (options.validateInput) {
-            // Pass unwrapped data to validator
-            const unwrapped = new Uint8Array(data.slice(6));
-            if (!options.validateInput(unwrapped)) {
-              return;
-            }
-          }
-
-          clearTimeout(timeoutId);
-          try {
-            const result = this.parseWrappedResponse(data, options);
-            resolve(result);
-          } catch (e) {
-            reject(e);
-          }
-        };
-
-        this.device!.sendReport(0, message as BufferSource).catch(err => {
-          clearTimeout(timeoutId);
-          reject(err);
-        });
-      });
-    });
-
-    this.queue = operation.then(() => undefined).catch(() => undefined);
-    return operation;
+    // A wrapper error frame for us means the keyboard refused our client ID.
+    return this.sendWrapped(VIA_PREFIX, cmd, args, options, (code) => new ClientIdRejectedError(code));
   }
 
   // Overload signatures for sendSvil()
@@ -1015,57 +1039,78 @@ export class SvilUSB {
     args: number[],
     options: USBSendOptions = {}
   ): Promise<Uint8Array | Uint16Array | Uint32Array | number | bigint | (number | bigint)[]> {
+    return this.sendWrapped(SVIL_PREFIX, cmd, args, options, (code) => new Error(`Svil protocol error: code ${code}`));
+  }
+
+  /**
+   * One wrapped request, queued behind the others. Resolves with the first report that is its
+   * reply (isReplyTo, then options.validateInput); every other report is ignored. On a timeout
+   * the request is remembered for STALE_REPLY_MS, so its late reply is dropped (takeStaleReply)
+   * instead of being taken as the reply to a later request. Nothing waits for that reply: the
+   * next request goes out at once.
+   */
+  private async sendWrapped(
+    protocol: number,
+    cmd: number,
+    args: number[],
+    options: USBSendOptions,
+    errorFrame: (code: number) => Error
+  ): Promise<Uint8Array | Uint16Array | Uint32Array | number | bigint | (number | bigint)[]> {
     if (!this.device) throw new Error("USB device not connected");
 
     // Ensure we have a valid client ID
     await this.ensureClientId();
 
-    // Build Svil command payload
     const payload = [cmd, ...args];
-    const message = this.buildWrappedMessage(SVIL_PREFIX, payload);
+    const message = this.buildWrappedMessage(protocol, payload);
+    const request: WrappedRequest = { clientId: this.clientId, protocol, payload };
+    const timeoutMs = options.timeoutMs ?? replyTimeoutFor(protocol, cmd);
 
-    // Queue the operations
+    // Queue the operations to prevent listener collision
     const operation = this.queue.then(async () => {
       return new Promise<Uint8Array | Uint16Array | Uint32Array | number | bigint | (number | bigint)[]>((resolve, reject) => {
+        let done = false;
+        const sentAt = Date.now();
+        const pending = { request, tookItsMatch: false };
+        this.pending = pending;
         const timeoutId = setTimeout(() => {
-          console.warn("Svil Command Timed out:", cmd);
+          done = true;
+          console.warn(`USB command 0x${cmd.toString(16)} (protocol 0x${protocol.toString(16)}) timed out`);
+          // A report that would have answered it was dropped as an earlier request's late reply:
+          // either that reply was lost and this was this request's, or this one's is still to
+          // come. Not remembering it keeps identical commands from dropping each other's replies.
+          if (!pending.tookItsMatch) this.staleRequests.push({ request, until: sentAt + STALE_REPLY_MS });
           reject(new Error("USB Command Timeout"));
-        }, 1000);
+        }, timeoutMs);
 
         this.listener = (data: ArrayBuffer) => {
+          if (done) return;
           const u8 = new Uint8Array(data);
-
-          // Validation: check wrapper prefix and client ID
           if (u8[0] !== WRAPPER_PREFIX) return;
-          const respClientId = u8[1] | (u8[2] << 8) | (u8[3] << 16) | (u8[4] << 24);
-          if (respClientId !== this.clientId) return;
-
-          // Check for error response (protocol byte = 0xFF)
-          if (u8[5] === 0xFF) {
+          const respClientId = (u8[1] | (u8[2] << 8) | (u8[3] << 16) | (u8[4] << 24)) >>> 0;
+          if (respClientId !== request.clientId >>> 0) return;
+          // Error frame addressed to us: the keyboard refused the command.
+          if (u8[5] === CLIENT_ERROR_PROTOCOL) {
+            done = true;
             clearTimeout(timeoutId);
-            const errorCode = u8[6];
-            reject(new Error(`Svil protocol error: code ${errorCode}`));
+            reject(errorFrame(u8[6]));
             return;
           }
+          if (!isReplyTo(u8, request)) return;
+          // Additional validation if provided, on the unwrapped data
+          if (options.validateInput && !options.validateInput(new Uint8Array(data.slice(6)))) return;
 
-          // Additional validation if provided
-          if (options.validateInput) {
-            const unwrapped = new Uint8Array(data.slice(6));
-            if (!options.validateInput(unwrapped)) {
-              return;
-            }
-          }
-
+          done = true;
           clearTimeout(timeoutId);
           try {
-            const result = this.parseWrappedResponse(data, options);
-            resolve(result);
+            resolve(this.parseWrappedResponse(data, options));
           } catch (e) {
             reject(e);
           }
         };
 
         this.device!.sendReport(0, message as BufferSource).catch(err => {
+          done = true;
           clearTimeout(timeoutId);
           reject(err);
         });
